@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Select Deposit Tier</title>
+  <style>
+    body {
+      background: #1a0033;
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    
+    .container {
+      background: rgba(0,0,0,0.8);
+      padding: 30px;
+      border-radius: 15px;
+      border: 2px solid #d4af37;
+      max-width: 400px;
+      text-align: center;
+    }
+    
+    h2 {
+      color: #d4af37;
+      margin-bottom: 10px;
+    }
+    
+    .tier-card {
+      background: #330066;
+      border: 2px solid #d4af37;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 15px 0;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+    
+    .tier-card:hover {
+      background: #440077;
+      transform: scale(1.02);
+    }
+    
+    .tier-card.selected {
+      background: #008751;
+      border-color: #fff;
+      box-shadow: 0 0 15px rgba(0, 135, 81, 0.5);
+    }
+    
+    .deposit-amount {
+      font-size: 24px;
+      font-weight: bold;
+      color: #fff;
+    }
+    
+    .demo-bonus {
+      font-size: 18px;
+      color: #d4af37;
+      margin: 10px 0;
+    }
+    
+    .select-btn {
+      background: #008751;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 20px;
+      font-size: 16px;
+    }
+    
+    .rules {
+      background: rgba(255,255,255,0.1);
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+      font-size: 12px;
+      text-align: left;
+    }
+  </style>
+
+</head>
+<body>
+  <div class="container">
+    <h2>🎮 SELECT DEPOSIT TIER</h2>
+    <p style="color: #ccc; margin-bottom: 30px;">
+      Choose your deposit tier to receive demo bonus. This tier determines your withdrawal requirements.
+    </p>
+    
+    <div class="tier-card" onclick="selectTier(1000)">
+      <div class="deposit-amount">₦1,000 Deposit</div>
+      <div class="demo-bonus">Get ₦50,000 Demo Bonus</div>
+      <small style="color: #aaa;">
+        • Withdraw after: ₦5,000 staked & ₦3,000 won<br>
+        • Demo Bonus: ₦50,000
+      </small>
+    </div>
+    
+    <div class="tier-card" onclick="selectTier(5000)">
+      <div class="deposit-amount">₦5,000 Deposit</div>
+      <div class="demo-bonus">Get ₦250,000 Demo Bonus</div>
+      <small style="color: #aaa;">
+        • Withdraw after: ₦20,000 staked & ₦15,000 won<br>
+        • Demo Bonus: ₦250,000
+      </small>
+    </div>
+    
+    <div class="tier-card" onclick="selectTier(10000)">
+      <div class="deposit-amount">₦10,000 Deposit</div>
+      <div class="demo-bonus">Get ₦500,000 Demo Bonus</div>
+      <small style="color: #aaa;">
+        • Withdraw after: ₦40,000 staked & ₦30,000 won<br>
+        • Demo Bonus: ₦500,000
+      </small>
+    </div>
+    
+    <button class="select-btn" onclick="submitTier()">CONTINUE TO GAME</button>
+    
+    <div class="rules">
+      <p style="margin-top: 0; color: #d4af37;"><b>Important Rules:</b></p>
+      <p style="margin: 5px 0;">• Demo balance is for practice only</p>
+      <p style="margin: 5px 0;">• Real balance required for withdrawals</p>
+      <p style="margin: 5px 0;">• Complete staking gauge to unlock withdrawals</p>
+      <p style="margin: 5px 0;">• Admin verification required for all withdrawals</p>
+    </div>
+  </div>
+
+<script>
+    const API = "http://localhost:5000";
+    let selectedTier = null;
+    
+    function selectTier(tier) {
+      selectedTier = tier;
+      document.querySelectorAll('.tier-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      event.currentTarget.classList.add('selected');
+    }
+    
+    async function submitTier() {
+      if (!selectedTier) {
+        alert("Please select a deposit tier");
+        return;
+      }
+      
+      const token = localStorage.getItem("token");
+      
+      if (!token) {
+        alert("No authentication token found. Please login again.");
+        window.location.href = "auth.html";
+        return;
+      }
+      
+      const btn = document.querySelector('.select-btn');
+      btn.disabled = true;
+      btn.textContent = 'PROCESSING...';
+      
+      try {
+        console.log("Sending tier selection:", selectedTier);
+        console.log("Using token:", token.substring(0, 20) + "...");
+        
+        const response = await fetch(API + "/deposit/select-tier", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ tier: selectedTier })
+        });
+        
+        console.log("Response status:", response.status);
+        const data = await response.json();
+        console.log("Response data:", data);
+        
+        if (data.success) {
+          alert(`✅ Tier selected! You received ₦${data.demoBonus.toLocaleString()} demo bonus.`);
+          window.location.href = "game.html";
+        } else {
+          alert(data.message || "Failed to select tier");
+          btn.disabled = false;
+          btn.textContent = 'CONTINUE TO GAME';
+        }
+        
+      } catch (error) {
+        console.error("Tier selection error:", error);
+        alert("Network error. Please check console and try again.");
+        btn.disabled = false;
+        btn.textContent = 'CONTINUE TO GAME';
+      }
+    }
+    
+    // Auto-select first tier
+    window.onload = () => {
+      selectTier(1000);
+      
+      // Check if user is logged in
+      const token = localStorage.getItem("token");
+      if (!token) {
+        alert("Please login first");
+        window.location.href = "auth.html";
+      }
+      
+      // Debug: Show token in console
+      console.log("Token in localStorage:", token ? "Present" : "Missing");
+      if (token) {
+        console.log("Token first 30 chars:", token.substring(0, 30) + "...");
+      }
+    };
+</script>
+<script src="audio-controller.js"></script>
+<script>
+    // Auto-start audio on these pages too
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            if (window.audioController) {
+                window.audioController.start();
+            }
+        }, 1000);
+    });
+</script>
+<script>
+// Audio for login/register pages
+(function() {
+    console.log('🎵 Setting up page audio...');
+    
+    // Check mute preference
+    const isMuted = localStorage.getItem('musicMuted') === 'true';
+    
+    // Create audio element with WORKING OGG file
+    const audio = new Audio('https://commondatastorage.googleapis.com/codeskulptor-assets/Epoq-Lepidoptera.ogg');
+    audio.loop = true;
+    audio.volume = 0.3;
+    audio.muted = isMuted;
+    audio.load();
+    
+    // Update button if exists
+    const btn = document.getElementById('mute-btn');
+    if (btn) {
+        btn.innerHTML = isMuted ? '🔇' : '🔊';
+        btn.style.color = isMuted ? '#888' : '#fff';
+        btn.onclick = function() {
+            const newMuted = !isMuted;
+            localStorage.setItem('musicMuted', newMuted);
+            location.reload();
+        };
+    }
+    
+    // Start on ANY click
+    const startOnClick = () => {
+        if (!isMuted && audio.paused) {
+            audio.play().then(() => {
+                console.log('✅ Page music started');
+            }).catch(e => {
+                console.log('Page audio failed:', e.message);
+            });
+        }
+    };
+    
+    document.addEventListener('click', startOnClick);
+    document.addEventListener('touchstart', startOnClick);
+    
+    // Also try auto-start
+    setTimeout(() => {
+        if (!isMuted && audio.paused) {
+            audio.play().catch(e => {
+                console.log('Auto-start failed, waiting for click');
+            });
+        }
+    }, 1500);
+})();
+</script>
+
+</body>
+</html>

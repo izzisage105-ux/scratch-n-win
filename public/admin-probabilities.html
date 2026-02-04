@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Game Probabilities Admin</title>
+    <style>
+        body { background: #1a0033; color: white; font-family: Arial; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: rgba(0,0,0,0.7); padding: 30px; border-radius: 10px; border: 2px solid #d4af37; }
+        h2 { color: #d4af37; text-align: center; }
+        .section { background: #330066; padding: 20px; margin: 15px 0; border-radius: 8px; border: 1px solid #d4af37; }
+        .mode-tabs { display: flex; margin-bottom: 20px; }
+        .mode-tab { padding: 10px 20px; background: #555; cursor: pointer; margin-right: 5px; }
+        .mode-tab.active { background: #008751; }
+        input, select { width: 100%; padding: 8px; margin: 5px 0; border-radius: 4px; }
+        .btn { background: #008751; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🎲 Game Probability Controls</h2>
+        
+        <div class="mode-tabs">
+            <div class="mode-tab active" onclick="showMode('demo')">Demo Mode</div>
+            <div class="mode-tab" onclick="showMode('real')">Real Money Mode</div>
+        </div>
+        
+        <div id="demo-controls">
+            <!-- Demo controls will be loaded here -->
+        </div>
+        
+        <div id="real-controls" style="display:none;">
+            <!-- Real controls will be loaded here -->
+        </div>
+        
+        <button class="btn" onclick="saveProbabilities()">💾 Save All Settings</button>
+        
+        <p style="text-align: center; margin-top: 30px;">
+            <a href="game.html" style="color: #d4af37;">Back to Game</a> |
+            <a href="admin-audio.html" style="color: #d4af37;">Audio Controls</a>
+        </p>
+    </div>
+    
+    <script>
+        const API = "http://localhost:5000";
+        let currentMode = 'demo';
+        
+        const sections = [
+            { id: 'A', name: 'Section A', stake: 150, maxWin: 2250 },
+            { id: 'B', name: 'Section B', stake: 300, maxWin: 7500 },
+            { id: 'C', name: 'Section C', stake: 500, maxWin: 10000 },
+            { id: 'D', name: 'Section D', stake: 1000, maxWin: 15000 }
+        ];
+        
+        function showMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.mode-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            document.getElementById('demo-controls').style.display = mode === 'demo' ? 'block' : 'none';
+            document.getElementById('real-controls').style.display = mode === 'real' ? 'block' : 'none';
+            
+            loadControls(mode);
+        }
+        
+        function loadControls(mode) {
+            const containerId = mode + '-controls';
+            const container = document.getElementById(containerId);
+            
+            let html = `<h3>${mode.toUpperCase()} MODE PROBABILITIES</h3>`;
+            
+            sections.forEach(section => {
+                html += `
+                    <div class="section">
+                        <h4>${section.name} (₦${section.stake} Stake)</h4>
+                        <p>Max Win: ₦${section.maxWin.toLocaleString()}</p>
+                        
+                        <label>Win Probability (0.1 = 10%):</label>
+                        <input type="number" id="${mode}-${section.id}-prob" step="0.01" min="0" max="1" value="0.3">
+                        
+                        <label>Possible Amounts (comma separated):</label>
+                        <input type="text" id="${mode}-${section.id}-amounts" value="150,300,450,600,750">
+                        
+                        <label>RTP (Return to Player %):</label>
+                        <input type="number" id="${mode}-${section.id}-rtp" min="1" max="100" value="85">
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        async function saveProbabilities() {
+            const settings = {
+                mode: currentMode,
+                sections: {}
+            };
+            
+            sections.forEach(section => {
+                settings.sections[section.id] = {
+                    winProb: parseFloat(document.getElementById(`${currentMode}-${section.id}-prob`).value),
+                    amounts: document.getElementById(`${currentMode}-${section.id}-amounts`).value.split(',').map(x => parseInt(x.trim())),
+                    rtp: parseInt(document.getElementById(`${currentMode}-${section.id}-rtp`).value)
+                };
+            });
+            
+            try {
+                // In real implementation, save to server
+                localStorage.setItem(`prob_${currentMode}`, JSON.stringify(settings));
+                alert(`✅ ${currentMode.toUpperCase()} probabilities saved!`);
+            } catch (error) {
+                console.error("Save error:", error);
+                alert("Failed to save");
+            }
+        }
+        
+        // Load demo controls on start
+        window.onload = () => {
+            loadControls('demo');
+        };
+    </script>
+
+</body>
+</html>

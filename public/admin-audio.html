@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Audio Admin</title>
+    <style>
+        body {
+            background: #1a0033;
+            color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: rgba(0,0,0,0.7);
+            padding: 30px;
+            border-radius: 10px;
+            border: 2px solid #d4af37;
+        }
+        h2 {
+            color: #d4af37;
+            text-align: center;
+        }
+        .btn {
+            background: #008751;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 5px;
+            width: 100%;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        .status {
+            background: #333;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🎵 Audio System Admin</h2>
+        
+        <div class="status" id="status">
+            Loading audio status...
+        </div>
+        
+        <button class="btn" onclick="toggleAudio()" id="toggle-btn">
+            Toggle Audio System
+        </button>
+        
+        <h3>Change Background Music</h3>
+        <input type="text" id="music-url" placeholder="Enter music URL (MP3)">
+        <button class="btn" onclick="changeMusic()">Change Music</button>
+        
+        <h3>Default Music URLs:</h3>
+        <button class="btn" onclick="setDefaultMusic(1)">🎮 Game Music 1</button>
+        <button class="btn" onclick="setDefaultMusic(2)">🎲 Game Music 2</button>
+        <button class="btn" onclick="setDefaultMusic(3)">💰 Win Music</button>
+        
+        <p style="text-align: center; margin-top: 30px;">
+            <a href="game.html" style="color: #d4af37;">Back to Game</a>
+        </p>
+    </div>
+    
+    <script>
+      const API = "http://localhost:5000";
+        
+        async function loadStatus() {
+            try {
+                const res = await fetch(API + "/audio/status");
+                const data = await res.json();
+                
+                if (data.success) {
+                    document.getElementById('status').innerHTML = `
+                        <strong>Audio System Status:</strong><br>
+                        • Enabled: ${data.audioSettings.enabled ? '✅' : '❌'}<br>
+                        • Music URL: ${data.audioSettings.musicUrl.substring(0, 50)}...<br>
+                        • Volume: ${data.audioSettings.volume}
+                    `;
+                    
+                    document.getElementById('toggle-btn').textContent = 
+                        data.audioSettings.enabled ? 'Disable Audio System' : 'Enable Audio System';
+                }
+            } catch (error) {
+                console.error("Failed to load status:", error);
+            }
+        }
+        
+        async function toggleAudio() {
+            try {
+                const res = await fetch(API + "/admin/audio/toggle", {
+                    method: "POST"
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert(`Audio system ${data.enabled ? 'enabled' : 'disabled'}`);
+                    loadStatus();
+                }
+            } catch (error) {
+                console.error("Toggle error:", error);
+            }
+        }
+        
+        async function changeMusic() {
+            const url = document.getElementById('music-url').value.trim();
+            
+            if (!url) {
+                alert("Please enter a music URL");
+                return;
+            }
+            
+            try {
+                const res = await fetch(API + "/admin/audio/change", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ musicUrl: url })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert("Music changed successfully!");
+                    document.getElementById('music-url').value = '';
+                    loadStatus();
+                } else {
+                    alert("Failed to change music: " + data.message);
+                }
+            } catch (error) {
+                console.error("Change music error:", error);
+            }
+        }
+        
+        function setDefaultMusic(type) {
+    const urls = {
+        1: 'https://commondatastorage.googleapis.com/codeskulptor-assets/Epoq-Lepidoptera.ogg', // Main game music
+        2: 'https://commondatastorage.googleapis.com/codeskulptor-assets/Evillaugh.ogg', // Win sound
+        3: 'https://commondatastorage.googleapis.com/codeskulptor-assets/evolution.ogg'  // Alternative
+    };
+    
+    document.getElementById('music-url').value = urls[type];
+}
+        
+        // Load status on page load
+        window.onload = loadStatus;
+    </script>
+
+</body>
+</html>

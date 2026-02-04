@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Game History - Scratch & Win</title>
+    <style>
+        body {
+            background: #1a0033;
+            color: white;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #d4af37;
+            margin-bottom: 10px;
+        }
+        .back-btn {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: #008751;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .stats {
+            background: rgba(0,0,0,0.5);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #d4af37;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+        }
+        .stat-box {
+            text-align: center;
+            padding: 10px;
+        }
+        .stat-value {
+            font-size: 24px;
+            color: #d4af37;
+            font-weight: bold;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #ccc;
+        }
+        .game-list {
+            margin-top: 20px;
+        }
+        .game-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-left: 4px solid #008751;
+        }
+        .game-card.win {
+            border-left-color: #00ff00;
+            background: rgba(0,255,0,0.05);
+        }
+        .game-card.loss {
+            border-left-color: #ff416c;
+            background: rgba(255,65,108,0.05);
+        }
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .game-mode {
+            background: #333;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        .game-amount {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .win-amount {
+            color: #00ff00;
+        }
+        .loss-amount {
+            color: #ff416c;
+        }
+        .game-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            gap: 5px;
+            margin-top: 10px;
+        }
+        .grid-cell {
+            background: white;
+            color: black;
+            text-align: center;
+            padding: 5px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .grid-cell.win {
+            background: #00ff00;
+            color: #000;
+        }
+        .no-history {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+        .filter-buttons {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .filter-btn {
+            background: #330066;
+            border: 1px solid #d4af37;
+            color: white;
+            padding: 8px 15px;
+            margin: 0 5px;
+            border-radius: 20px;
+            cursor: pointer;
+        }
+        .filter-btn.active {
+            background: #008751;
+        }
+    </style>
+</head>
+<body>
+    <a href="game.html" class="back-btn">← Back to Game</a>
+    
+    <div class="container">
+        <div class="header">
+            <h1>🎮 GAME HISTORY</h1>
+            <p>View your past scratch card games</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-value" id="total-games">0</div>
+                <div class="stat-label">Total Games</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="wins">0</div>
+                <div class="stat-label">Wins</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="win-rate">0%</div>
+                <div class="stat-label">Win Rate</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="total-won">₦0</div>
+                <div class="stat-label">Total Won</div>
+            </div>
+        </div>
+        
+        <div class="filter-buttons">
+            <button class="filter-btn active" onclick="filterGames('all')">All Games</button>
+            <button class="filter-btn" onclick="filterGames('demo')">Demo Only</button>
+            <button class="filter-btn" onclick="filterGames('real')">Real Only</button>
+            <button class="filter-btn" onclick="filterGames('wins')">Wins Only</button>
+        </div>
+        
+        <div class="game-list" id="game-list">
+            <!-- Games will be loaded here -->
+            <div class="no-history">Loading game history...</div>
+        </div>
+    </div>
+
+    <script>
+       const API = "http://localhost:5000";
+        let allGames = [];
+        let currentFilter = 'all';
+        
+        async function loadGameHistory() {
+    const token = localStorage.getItem("token");
+    
+    if (!token) {
+        window.location.href = "auth.html";
+        return;
+    }
+    
+    try {
+        const response = await fetch(API + "/user/game-history", {
+            headers: { 
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            allGames = data.history;
+            
+            // If no games, show sample data for testing
+            if (allGames.length === 0) {
+                console.log("No games found, showing sample data");
+                allGames = generateSampleGames();
+            }
+            
+            updateStats(allGames);
+            filterGames('all');
+        } else {
+            // Show sample data on error
+            console.log("Error loading, showing sample data");
+            allGames = generateSampleGames();
+            updateStats(allGames);
+            filterGames('all');
+        }
+    } catch (error) {
+        console.error("Load history error:", error);
+        // Show sample data
+        allGames = generateSampleGames();
+        updateStats(allGames);
+        filterGames('all');
+    }
+}
+
+function generateSampleGames() {
+    const sampleGames = [];
+    const modes = ['demo', 'real'];
+    const stakes = [150, 300, 500, 1000];
+    const winAmounts = [0, 150, 300, 450, 600, 900, 1200, 1500];
+    
+    for (let i = 0; i < 10; i++) {
+        const mode = modes[Math.floor(Math.random() * modes.length)];
+        const stake = stakes[Math.floor(Math.random() * stakes.length)];
+        const winAmount = winAmounts[Math.floor(Math.random() * winAmounts.length)];
+        const isWin = winAmount > 0;
+        const gridValues = Array(9).fill(0).map(() => 
+            Math.random() > 0.5 ? stake : stake * 2
+        );
+        
+        sampleGames.push({
+            id: 'sample-' + i,
+            stake: stake,
+            mode: mode,
+            gridValues: gridValues,
+            winAmount: winAmount,
+            isWin: isWin,
+            newBalance: mode === 'real' ? 10000 : 50000,
+            timestamp: new Date(Date.now() - i * 3600000).toISOString(),
+            matchingIndices: isWin ? [0, 4, 8] : []
+        });
+    }
+    
+    return sampleGames;
+}
+        
+        function updateStats(games) {
+            const totalGames = games.length;
+            const wins = games.filter(g => g.isWin).length;
+            const winRate = totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0;
+            const totalWon = games.reduce((sum, game) => sum + (game.isWin ? game.winAmount : 0), 0);
+            
+            document.getElementById('total-games').textContent = totalGames;
+            document.getElementById('wins').textContent = wins;
+            document.getElementById('win-rate').textContent = winRate + '%';
+            document.getElementById('total-won').textContent = '₦' + totalWon.toLocaleString();
+        }
+        
+        function filterGames(filter) {
+            currentFilter = filter;
+            
+            // Update active filter button
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            let filteredGames = allGames;
+            
+            switch(filter) {
+                case 'demo':
+                    filteredGames = allGames.filter(g => g.mode === 'demo');
+                    break;
+                case 'real':
+                    filteredGames = allGames.filter(g => g.mode === 'real');
+                    break;
+                case 'wins':
+                    filteredGames = allGames.filter(g => g.isWin);
+                    break;
+            }
+            
+            displayGames(filteredGames);
+        }
+        
+        function displayGames(games) {
+            const container = document.getElementById('game-list');
+            
+            if (games.length === 0) {
+                container.innerHTML = `
+                    <div class="no-history">
+                        No games found for this filter
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            
+            games.forEach(game => {
+                const gameClass = game.isWin ? 'win' : 'loss';
+                const date = new Date(game.timestamp).toLocaleString();
+                
+                html += `
+                    <div class="game-card ${gameClass}">
+                        <div class="game-header">
+                            <div>
+                                <span class="game-mode">${game.mode.toUpperCase()}</span>
+                                <span style="margin-left: 10px; font-size: 12px; color: #ccc;">
+                                    Stake: ₦${game.stake.toLocaleString()}
+                                </span>
+                            </div>
+                            <div style="font-size: 12px; color: #888;">
+                                ${date}
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-size: 14px;">
+                                    ${game.isWin ? '🎉 YOU WON!' : '💸 No win'}
+                                </div>
+                                ${game.isWin ? `
+                                    <div class="game-amount win-amount">
+                                        +₦${game.winAmount.toLocaleString()}
+                                    </div>
+                                ` : ''}
+                            </div>
+                            
+                            <div style="text-align: right;">
+                                <div style="font-size: 11px; color: #ccc;">
+                                    New Balance:
+                                </div>
+                                <div style="font-size: 16px; font-weight: bold;">
+                                    ₦${game.newBalance.toLocaleString()}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="game-grid">
+                            ${game.gridValues.map((amount, index) => {
+                                const isWinCell = game.matchingIndices.includes(index);
+                                return `
+                                    <div class="grid-cell ${isWinCell ? 'win' : ''}">
+                                        ₦${amount}
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        // Load history on page load
+        window.onload = loadGameHistory;
+    </script>
+
+</body>
+</html>

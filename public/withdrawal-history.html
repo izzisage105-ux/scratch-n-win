@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Withdrawal History - Scratch & Win</title>
+    <style>
+        body {
+            background: #1a0033;
+            color: white;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #d4af37;
+            margin-bottom: 10px;
+        }
+        .back-btn {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: #008751;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .stats {
+            background: rgba(0,0,0,0.5);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #d4af37;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+        }
+        .stat-box {
+            text-align: center;
+            padding: 10px;
+        }
+        .stat-value {
+            font-size: 24px;
+            color: #d4af37;
+            font-weight: bold;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #ccc;
+        }
+        .history-list {
+            margin-top: 20px;
+        }
+        .withdrawal-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-left: 4px solid #008751;
+        }
+        .withdrawal-card.pending {
+            border-left-color: #ffc107;
+            background: rgba(255,193,7,0.05);
+        }
+        .withdrawal-card.approved {
+            border-left-color: #28a745;
+            background: rgba(40,167,69,0.05);
+        }
+        .withdrawal-card.rejected {
+            border-left-color: #dc3545;
+            background: rgba(220,53,69,0.05);
+        }
+        .withdrawal-card.paid {
+            border-left-color: #17a2b8;
+            background: rgba(23,162,184,0.05);
+        }
+        .withdrawal-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .withdrawal-amount {
+            font-size: 20px;
+            font-weight: bold;
+        }
+        .withdrawal-status {
+            background: #333;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        .pending { color: #ffc107; }
+        .approved { color: #28a745; }
+        .rejected { color: #dc3545; }
+        .paid { color: #17a2b8; }
+        .no-history {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+        .filter-buttons {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .filter-btn {
+            background: #330066;
+            border: 1px solid #d4af37;
+            color: white;
+            padding: 8px 15px;
+            margin: 0 5px;
+            border-radius: 20px;
+            cursor: pointer;
+        }
+        .filter-btn.active {
+            background: #008751;
+        }
+        .bank-details {
+            font-size: 12px;
+            color: #aaa;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 4px;
+        }
+        .admin-notes {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 4px;
+        }
+    </style>
+
+</head>
+<body>
+    <a href="game.html" class="back-btn">← Back to Game</a>
+    
+    <div class="container">
+        <div class="header">
+            <h1>💸 WITHDRAWAL HISTORY</h1>
+            <p>View all your withdrawal requests and their status</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-value" id="total-withdrawals">0</div>
+                <div class="stat-label">Total Withdrawals</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="total-amount">₦0</div>
+                <div class="stat-label">Total Amount</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="paid-withdrawals">0</div>
+                <div class="stat-label">Paid</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="pending-withdrawals">0</div>
+                <div class="stat-label">Pending</div>
+            </div>
+        </div>
+        
+        <div class="filter-buttons">
+            <button class="filter-btn active" onclick="filterWithdrawals('all')">All Withdrawals</button>
+            <button class="filter-btn" onclick="filterWithdrawals('pending')">Pending</button>
+            <button class="filter-btn" onclick="filterWithdrawals('approved')">Approved</button>
+            <button class="filter-btn" onclick="filterWithdrawals('paid')">Paid</button>
+        </div>
+        
+        <div class="history-list" id="withdrawal-list">
+            <div class="no-history">Loading withdrawal history...</div>
+        </div>
+    </div>
+
+    <script>
+        const API = "http://localhost:5000";
+        let allWithdrawals = [];
+        let currentFilter = 'all';
+        
+        async function loadWithdrawalHistory() {
+            const token = localStorage.getItem("token");
+            
+            if (!token) {
+                window.location.href = "auth.html";
+                return;
+            }
+            
+            try {
+                const response = await fetch(API + "/user/withdrawal-history", {
+                    headers: { 
+                        "Authorization": `Bearer ${token}`,
+                        "Content-Type": "application/json"
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    allWithdrawals = data.withdrawals || [];
+                    
+                    updateStats(allWithdrawals);
+                    filterWithdrawals('all');
+                } else {
+                    console.error("Load withdrawals error:", data.message);
+                    document.getElementById('withdrawal-list').innerHTML = `
+                        <div class="no-history">
+                            Error loading withdrawal history
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error("Load withdrawal history error:", error);
+                document.getElementById('withdrawal-list').innerHTML = `
+                    <div class="no-history">
+                        Network error. Please check your connection.
+                    </div>
+                `;
+            }
+        }
+        
+        function updateStats(withdrawals) {
+            const totalWithdrawals = withdrawals.length;
+            const totalAmount = withdrawals.reduce((sum, withdrawal) => sum + (withdrawal.amount || 0), 0);
+            const paidWithdrawals = withdrawals.filter(w => w.status === 'paid').length;
+            const pendingWithdrawals = withdrawals.filter(w => w.status === 'pending').length;
+            
+            document.getElementById('total-withdrawals').textContent = totalWithdrawals;
+            document.getElementById('total-amount').textContent = '₦' + totalAmount.toLocaleString();
+            document.getElementById('paid-withdrawals').textContent = paidWithdrawals;
+            document.getElementById('pending-withdrawals').textContent = pendingWithdrawals;
+        }
+        
+        function filterWithdrawals(filter) {
+            currentFilter = filter;
+            
+            // Update active filter button
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            let filteredWithdrawals = allWithdrawals;
+            
+            if (filter !== 'all') {
+                filteredWithdrawals = allWithdrawals.filter(w => w.status === filter);
+            }
+            
+            displayWithdrawals(filteredWithdrawals);
+        }
+        
+        function displayWithdrawals(withdrawals) {
+            const container = document.getElementById('withdrawal-list');
+            
+            if (withdrawals.length === 0) {
+                container.innerHTML = `
+                    <div class="no-history">
+                        No withdrawals found for this filter
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            
+            withdrawals.forEach(withdrawal => {
+                const date = new Date(withdrawal.createdAt).toLocaleString();
+                const approvedDate = withdrawal.approvedAt ? new Date(withdrawal.approvedAt).toLocaleString() : 'Not approved';
+                const paidDate = withdrawal.paidAt ? new Date(withdrawal.paidAt).toLocaleString() : 'Not paid';
+                
+                html += `
+                    <div class="withdrawal-card ${withdrawal.status}">
+                        <div class="withdrawal-header">
+                            <div>
+                                <div class="withdrawal-amount">₦${(withdrawal.amount || 0).toLocaleString()}</div>
+                                <div style="font-size: 12px; color: #ccc; margin-top: 5px;">
+                                    ${date}
+                                </div>
+                            </div>
+                            <div class="withdrawal-status ${withdrawal.status}">
+                                ${withdrawal.status.toUpperCase()}
+                            </div>
+                        </div>
+                        
+                        <div class="bank-details">
+                            <div><strong>Bank:</strong> ${withdrawal.bankName || 'Not specified'}</div>
+                            <div><strong>Account:</strong> ${withdrawal.accountNumber || 'Not specified'}</div>
+                            <div><strong>Name:</strong> ${withdrawal.accountName || 'Not specified'}</div>
+                        </div>
+                        
+                        ${withdrawal.notes ? `
+                            <div class="admin-notes">
+                                <strong>Admin Notes:</strong> ${withdrawal.notes}
+                            </div>
+                        ` : ''}
+                        
+                        <div style="display: flex; justify-content: space-between; margin-top: 10px;">
+                            <div style="font-size: 11px; color: #888;">
+                                Request ID: ${withdrawal.id.substring(0, 8)}...
+                            </div>
+                            <div style="font-size: 11px; color: #888;">
+                                ${withdrawal.status === 'paid' ? `Paid: ${paidDate}` : 
+                                  withdrawal.status === 'approved' ? `Approved: ${approvedDate}` : 
+                                  'Pending approval'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        // Load history on page load
+        window.onload = loadWithdrawalHistory;
+    </script>
+
+</body>
+</html>

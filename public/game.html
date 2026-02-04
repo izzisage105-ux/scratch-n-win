@@ -1,0 +1,917 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCRATCH AND WIN | OFFICIAL</title>
+    <style>
+        :root { 
+            --gold: #d4af37; 
+            --deep-purple: #1a0033; 
+            --light-purple: #330066;
+            --green: #008751; 
+            --glass: rgba(255,255,255,0.1); 
+        }
+        
+        body { 
+            background: var(--deep-purple); 
+            color: white; 
+            font-family: 'Segoe UI', Roboto, sans-serif; 
+            margin: 0; 
+            padding-bottom: 120px;
+            user-select: none;
+            overflow-x: hidden;
+        }
+
+        .header { background: rgba(0,0,0,0.8); padding: 15px; border-bottom: 2px solid var(--gold); position: sticky; top: 0; z-index: 100; backdrop-filter: blur(10px); }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .dep-btn { background: var(--gold); color: black; border: none; padding: 8px 15px; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 12px; }
+        
+        .balance-row { display: flex; justify-content: center; gap: 10px; }
+        .bal-card { background: var(--glass); padding: 10px; border: 1px solid var(--gold); border-radius: 12px; cursor: pointer; min-width: 140px; text-align: center; transition: 0.3s; }
+        .active-bal { background: var(--green); border-color: #fff; box-shadow: 
+
+0 0 15px rgba(0, 135, 81, 0.5); transform: scale(1.05); }
+
+        .gauge-section { margin: 10px auto; width: 90%; max-width: 400px; text-align: center; }
+        .bar-bg { background: #000; height: 18px; border-radius: 10px; border: 1px solid var(--gold); overflow: hidden; }
+        #bar-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #ff416c, #00ff00); transition: 1s ease; }
+
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 350px; margin: 10px auto; padding: 15px; background: var(--light-purple); border-radius: 15px; border: 2px solid var(--gold); }
+        .scratch-container { position: relative; width: 100%; aspect-ratio: 1/1; background: white; border-radius: 8px; overflow: hidden; border: 1px solid var(--gold); }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2; touch-action: none; transition: opacity 0.5s ease; }
+        .reveal-content { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; color: black; z-index: 1; }
+        .reveal-content .naira-icon { font-size: 30px; font-weight: bold; color: var(--green); margin-bottom: 2px; }
+        .reveal-content .amt { font-weight: bold; font-size: 13px; color: #333; }
+
+        .btn { background: var(--green); color: white; border: none; padding: 16px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 90%; margin: 10px auto; display: block; font-size: 16px; }
+        .btn-gold { background: var(--gold); color: black; }
+        
+        .form-section { margin: 30px auto; padding: 20px; background: rgba(0,0,0,0.3); max-width: 350px; border-radius: 15px; border: 1px solid var(--gold); }
+        .input-field { width: 100%; padding: 14px; margin-bottom: 12px; border-radius: 8px; border: none; display: block; box-sizing: border-box; background: #eee; color: #333; }
+
+        .screen { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 1000; overflow-y: auto; padding-top: 20px; }
+
+        .visible { display: block; }
+        .win-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 350px; background: white; color: black; border: 5px solid var(--gold); border-radius: 20px; z-index: 2000; padding: 30px; text-align: center; box-shadow: 0 0 50px var(--gold); }
+        .win-modal h1 { color: var(--gold); font-size: 40px; margin: 0; }
+        
+        .content-card { background: white; color: black; padding: 25px; border-radius: 20px; width: 85%; max-width: 350px; margin: 0 auto; text-align: center; }
+        #live-feed { background: rgba(0,0,0,0.95); border-top: 1px solid var(--gold); padding: 12px; position: fixed; bottom: 0; width: 100%; z-index: 50; font-size: 13px; text-align: center; color: var(--gold); }
+    </style>
+</head>
+<body>
+
+<div id="win-display" class="win-modal">
+    <p>CONGRATULATIONS!</p>
+    <h1>₦<span id="win-amt-text">0</span></h1>
+    <p>WON!</p>
+    <button class="btn" onclick="document.getElementById('win-display').style.display='none'">COLLECT CASH</button>
+</div>
+
+<div class="header">
+    <div class="top-bar">
+        <h2 style="color:var(--gold); margin:0;">SCRATCH & WIN</h2>
+        <button class="dep-btn" onclick="document.getElementById('deposit-screen').classList.add('visible')">+ DEPOSIT</button>
+    </div>
+    <!-- Add this in the header div, after the top-bar -->
+<div style="position: absolute; top: 15px; right: 80px;">
+    <button id="mute-btn" onclick="toggleMusic()" style="
+        background: transparent;
+        border: 1px solid var(--gold);
+        color: white;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        font-size: 20px;
+        cursor: pointer;
+    ">🔊</button>
+</div>
+    <div class="balance-row">
+        <div id="real-btn" class="bal-card active-bal" onclick="setMode('real')"><small>REAL WALLET</small><br>₦<span id="real-bal">0</span></div>
+        <div id="demo-btn" class="bal-card" onclick="setMode('demo')"><small>DEMO BONUS</small><br>₦<span id="demo-bal">0</span></div>
+    </div>
+
+    <p style="font-size:12px; color:var(--gold); text-align:center;">
+  Logged in as <b><span id="username"></span></b>
+</p>
+</div>
+
+<div class="tier-selector" style="display:flex; overflow-x:auto; gap:10px; padding:15px;">
+    <button class="tier-btn active" onclick="setTier(150, this)" style="background:var(--light-purple); border:1px solid var(--gold); color:white; padding:10px 20px; border-radius:20px; white-space:nowrap; cursor:pointer;">₦150 Stake</button>
+    <button class="tier-btn" onclick="setTier(300, this)" style="background:var(--light-purple); border:1px solid var(--gold); color:white; padding:10px 20px; border-radius:20px; white-space:nowrap; cursor:pointer;">₦300 Stake</button>
+    <button class="tier-btn" onclick="setTier(500, this)" style="background:var(--light-purple); border:1px solid var(--gold); color:white; padding:10px 20px; border-radius:20px; white-space:nowrap; cursor:pointer;">₦500 Stake</button>
+    <button class="tier-btn" onclick="setTier(1000, this)" style="background:var(--light-purple); border:1px solid var(--gold); color:white; padding:10px 20px; border-radius:20px; white-space:nowrap; cursor:pointer;">₦1000 Stake</button>
+</div>
+
+<div class="gauge-section">
+    <div class="bar-bg"><div id="bar-fill"></div></div>
+    <p id="gauge-label" style="font-size: 10px; color: var(--gold); margin-top: 5px; font-weight: bold;">REAL GAUGE: 0%</p>
+</div>
+
+<div class="grid" id="main-grid"></div>
+<button class="btn btn-gold" onclick="initGrid()">GET NEW CARD</button>
+
+<div class="form-section">
+    <h3 style="color:var(--gold); margin-top:0; text-align: center;">WITHDRAWAL</h3>
+    
+    <!-- Bank Details Form (shown first time) -->
+    <div id="bank-details-form">
+        <p style="font-size: 12px; color: #ccc; margin-bottom: 15px;">
+            Save your bank details for withdrawals (once only)
+        </p>
+        
+        <select id="banks" class="input-field" required>
+            <option value="">Select Bank...</option>
+            <option>Access Bank</option><option>Opay</option><option>Palmpay</option>
+            <option>Kuda</option><option>GTBank</option><option>Zenith Bank</option>
+            <option>First Bank</option><option>UBA</option><option>Union Bank</option>
+            <option>Fidelity Bank</option><option>Stanbic IBTC</option><option>Sterling Bank</option>
+        </select>
+
+        <input type="text" id="acc_name" class="input-field" placeholder="Account Name" required>
+        <input type="text" id="acc_num" class="input-field" placeholder="Account Number (numbers only)" pattern="\d+" required>
+        
+        <button class="btn" onclick="saveBankDetails()">💾 SAVE BANK DETAILS</button>
+    </div>
+    
+    <!-- Withdrawal Request Form (shown after bank details saved) -->
+    <div id="withdrawal-form" style="display: none;">
+        <div style="background: rgba(0,135,81,0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+            <p style="font-size: 12px; color: var(--gold); margin: 0 0 8px 0;">
+                <b>Withdrawal Status:</b> <span id="withdrawal-status-text">Checking...</span>
+            </p>
+            <p style="font-size: 11px; color: #ccc; margin: 5px 0;">
+                • Staking Requirement: <span id="stake-req">₦5,000</span><br>
+                • Winnings Requirement: <span id="win-req">₦3,000</span>
+            </p>
+        </div>
+        
+        <div id="withdrawal-unlock-message" style="
+            background: rgba(255, 193, 7, 0.1);
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #ffc107;
+            margin-bottom: 15px;
+            display: none;
+        ">
+            <p style="font-size: 11px; color: #ffc107; margin: 0;">
+                ⚠️ <b>Admin Approval Required</b><br>
+                You've met the requirements! Admin will unlock withdrawals for you.
+            </p>
+        </div>
+        
+        <div id="withdrawal-ready" style="display: none;">
+            <p style="font-size: 12px; color: #00ff00; margin-bottom: 10px;">
+                ✅ Withdrawal unlocked by admin!
+            </p>
+            
+            <input type="number" id="withdraw-amount" class="input-field" 
+                   placeholder="Amount to withdraw" min="1000" max="1000000">
+            
+            <button class="btn" onclick="submitWithdrawalRequest()">📤 REQUEST WITHDRAWAL</button>
+        </div>
+    </div>
+</div>
+
+<div id="deposit-screen" class="screen">
+    <div class="content-card" style="margin-top: 50px;">
+        <h2 style="color:var(--green)">TOP UP WALLET</h2>
+        <p>Deposit to unlock your withdrawal gauge.</p>
+        <button class="btn" onclick="showBank(1000)">₦1,000 Deposit</button>
+        <button class="btn" onclick="showBank(5000)">₦5,000 Deposit</button>
+        <button class="btn" onclick="showBank(10000)">₦10,000 Deposit</button>
+        <p onclick="closeScreens()" style="cursor:pointer; font-size:12px; color:gray;">Close</p>
+    </div>
+</div>
+
+<div id="bank-screen" class="screen">
+    <div class="content-card">
+        <h3>PAYMENT DESK</h3>
+        <p>Transfer to: <br><b>KUDA BANK | 2022675714 | IYANDA ISREAL</b></p>
+        <button class="btn" onclick="confirmPayment()">I HAVE PAID</button>
+    </div>
+</div>
+
+<div id="live-feed"><span id="feed-text">Connecting...</span></div>
+
+<!-- Add these buttons in game.html, perhaps near the logout button -->
+<div style="position: fixed; bottom: 80px; right: 20px; display: flex; flex-direction: column; gap: 10px;">
+    <button onclick="window.location.href='deposit-history.html'" 
+            style="background: #008751; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer;">
+        📥 Deposit History
+    </button>
+    <button onclick="window.location.href='withdrawal-history.html'" 
+            style="background: #330066; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer;">
+        📤 Withdrawal History
+    </button>
+    <button onclick="window.location.href='game-history.html'" 
+            style="background: #d4af37; color: black; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer;">
+        🎮 Game History
+    </button>
+</div>
+
+<button class="dep-btn" onclick="logout()">LOGOUT</button>
+
+
+<script>
+console.log("=== GAME.HTML LOADING ===");
+console.log("LocalStorage token exists?", !!localStorage.getItem("token"));
+
+const token = localStorage.getItem("token");
+
+// Simple token format validation
+if (!token) {
+    console.error("❌ No token found! Redirecting to auth.html");
+    location.href = "auth.html";
+} else {
+    console.log("✅ Token found, length:", token.length);
+    console.log("✅ Token first 30 chars:", token.substring(0, 30) + "...");
+    
+    // Try to decode token to see if it's valid (just for debugging)
+    try {
+        const tokenParts = token.split('.');
+        if (tokenParts.length === 3) {
+            console.log("✅ Token has 3 parts (JWT format)");
+            const payload = JSON.parse(atob(tokenParts[1]));
+            console.log("✅ Token payload:", payload);
+        } else {
+            console.error("❌ Token doesn't have 3 parts - not a valid JWT");
+        }
+    } catch (e) {
+        console.error("❌ Could not parse token:", e.message);
+    }
+}
+
+const API = "http://localhost:5000";
+let currentUser = null;
+let state = {
+    mode: 'real',
+    currentStake: 150,
+    stakedReal: 0,
+    stakedDemo: 0,
+    targetReal: 10000,
+    targetDemo: 200000
+};
+
+// In loadUser() function, after getting user data:
+async function loadUser() {
+  console.log("🔍 loadUser() called");
+  
+  const token = localStorage.getItem("token");
+  if (!token) {
+    location.href = "auth.html";
+    return;
+  }
+  
+  try {
+    // Check if user has selected tier
+    const tierCheck = await fetch(API + "/deposit/has-tier", {
+      headers: { 
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    });
+    
+    const tierData = await tierCheck.json();
+    
+    if (!tierData.hasTier) {
+      // Redirect to tier selection if no tier selected
+      alert("Please select a deposit tier first");
+      window.location.href = "select-tier.html";
+      return;
+    }
+    
+    // Get user data
+    const res = await fetch(API + "/user/me", {
+      headers: { 
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    });
+    
+    const data = await res.json();
+    
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Failed to load user");
+    }
+    
+    currentUser = data.user;
+    
+    // Update UI
+    document.getElementById("username").innerText = currentUser.username || "User";
+    document.getElementById('real-bal').innerText = (currentUser.balance || 0).toLocaleString();
+    document.getElementById('demo-bal').innerText = (currentUser.demoBalance || 0).toLocaleString();
+    
+    // REMOVED: setMode('demo') - Don't force demo mode!
+    // Only update gauge, don't change mode
+    updateGauge();
+    
+    console.log("✅ User loaded successfully!");
+    
+  } catch (error) {
+    console.error("🔥 loadUser() error:", error);
+    alert("Failed to load user: " + error.message);
+    
+    if (error.message.includes("401") || error.message.includes("token")) {
+      logout();
+    }
+  }
+}
+
+// Play game with backend
+async function initGrid() {
+    console.log("🎮 Starting game...");
+    console.log("Mode:", state.mode, "Stake:", state.currentStake);
+    
+    // 🔥 CHECK 1: Make sure we have a user loaded
+    if (!currentUser) {
+        alert("Please wait, loading user data...");
+        await loadUser();
+        return;
+    }
+    
+    // 🔥 CHECK 2: Validate balance WITHOUT auto-switch
+    if (state.mode === 'real') {
+        if (!currentUser.balance || currentUser.balance < state.currentStake) {
+            alert("Insufficient real balance. Please deposit or switch to demo manually.");
+            // Don't auto-switch, just stop the game
+            return;
+        }
+    }
+    
+    // 🔥 CHECK 3: For demo mode
+    if (state.mode === 'demo' && (!currentUser.demoBalance || currentUser.demoBalance < state.currentStake)) {
+        alert("Demo balance exhausted. Please switch to real balance or request more demo.");
+        return;
+    }
+    
+    // Disable button while processing
+    const btn = document.querySelector('.btn-gold');
+    btn.disabled = true;
+    btn.textContent = 'PROCESSING...';
+    
+    // ... rest of your existing code stays the same    
+    // ... rest of your existing code stays the same
+
+// Inside initGrid() function, after the try-catch block:
+try {
+    const token = localStorage.getItem("token");
+    
+    const response = await fetch(API + "/game/play", {
+        method: "POST",
+        headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            stake: state.currentStake,
+            mode: state.mode
+        })
+    });
+    
+    const data = await response.json();
+    console.log("Game response:", data);
+    
+    if (!response.ok || !data.success) {
+        alert(data.message || "Game failed");
+        return;
+    }
+    
+    // Update user data - PRESERVE CURRENT MODE
+    if (state.mode === 'real') {
+        currentUser.balance = data.newBalance;
+        state.stakedReal = data.totalStaked || 0;
+        document.getElementById('real-bal').innerText = currentUser.balance.toLocaleString();
+        
+        // IMPORTANT: Force UI to show real mode is still active
+        document.getElementById('real-btn').classList.add('active-bal');
+        document.getElementById('demo-btn').classList.remove('active-bal');
+    } else {
+        currentUser.demoBalance = data.newBalance;
+        state.stakedDemo = data.totalStaked || 0;
+        document.getElementById('demo-bal').innerText = currentUser.demoBalance.toLocaleString();
+        
+        // Force UI to show demo mode is still active
+        document.getElementById('demo-btn').classList.add('active-bal');
+        document.getElementById('real-btn').classList.remove('active-bal');
+    }
+    
+    // Create grid
+    const grid = document.getElementById('main-grid');
+    grid.innerHTML = '';
+    
+    data.gridValues.forEach((val, index) => {
+        createScratchBox(grid, val, index, data.matchingIndices || []);
+    });
+    
+    // Show win modal if won
+    if (data.isWin && data.winAmount > 0) {
+        triggerWin(data.winAmount);
+    }
+    
+    // Update gauge - make sure it uses the correct mode
+    updateGauge();
+    
+    // Play win sound if won
+    if (data.isWin) {
+        playWinSound();
+    }
+    
+} catch (error) {
+    console.error("Game error:", error);
+    alert("Network error. Check console.");
+} finally {
+    // Re-enable button
+    btn.disabled = false;
+    btn.textContent = 'GET NEW CARD';
+}
+}
+
+// Update createScratchBox to highlight winning boxes
+function createScratchBox(container, value, index, winningIndices) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'scratch-container';
+    
+    // Add win class if this is a winning box
+    const isWinner = winningIndices.includes(index);
+    if (isWinner) {
+        wrapper.style.border = '2px solid #00ff00';
+        wrapper.style.boxShadow = '0 0 10px #00ff00';
+    }
+    
+    wrapper.innerHTML = `
+        <div class="reveal-content">
+            <div class="naira-icon">₦</div>
+            <div class="amt">₦${value}</div>
+            ${isWinner ? '<div style="color: green; font-size: 10px;">WIN!</div>' : ''}
+        </div>
+        <canvas></canvas>
+    `;
+    
+    // ... rest of scratch code remains same ...
+    const canvas = wrapper.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 110; canvas.height = 110;
+    ctx.fillStyle = '#888'; 
+    ctx.fillRect(0, 0, 110, 110);
+    ctx.fillStyle = '#d4af37'; 
+    ctx.font = "bold 10px Arial";
+    ctx.fillText("SCRATCH OR TAP", 12, 60);
+
+    let isDrawing = false, moved = false;
+    const start = () => { isDrawing = true; moved = false; };
+    const end = () => { 
+        isDrawing = false; 
+        if(!moved) { 
+            canvas.style.opacity = '0'; 
+            setTimeout(() => canvas.remove(), 500); 
+        }
+    };
+    const scratch = (e) => {
+        if (!isDrawing) return; moved = true;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX || (e.touches ? e.touches[0].clientX : 0)) - rect.left;
+        const y = (e.clientY || (e.touches ? e.touches[0].clientY : 0)) - rect.top;
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath(); 
+        ctx.arc(x, y, 20, 0, Math.PI * 2); 
+        ctx.fill();
+    };
+
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('touchstart', start);
+    window.addEventListener('mouseup', end);
+    window.addEventListener('touchend', end);
+    canvas.addEventListener('mousemove', scratch);
+    canvas.addEventListener('touchmove', scratch);
+    
+    container.appendChild(wrapper);
+}
+
+// Add win sound
+function playWinSound() {
+    const winSound = new Audio('https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3');
+    winSound.volume = 0.5;
+    winSound.play().catch(e => console.log('Win sound failed:', e));
+}
+
+function triggerWin(amt) {
+    setTimeout(() => {
+        document.getElementById('win-amt-text').innerText = amt.toLocaleString();
+        document.getElementById('win-display').style.display = 'block';
+        
+        // DON'T call loadUser() here as it might reset the mode
+        // Instead, just update the display for the current mode
+        if (state.mode === 'real') {
+            // Add the win amount to current display
+            const current = currentUser.balance || 0;
+            const newBalance = current + amt;
+            currentUser.balance = newBalance;
+            document.getElementById('real-bal').innerText = newBalance.toLocaleString();
+        } else {
+            // For demo mode
+            const current = currentUser.demoBalance || 0;
+            const newBalance = current + amt;
+            currentUser.demoBalance = newBalance;
+            document.getElementById('demo-bal').innerText = newBalance.toLocaleString();
+        }
+    }, 3000);
+}
+function updateGauge() {
+    let p, label, target, staked;
+    
+    if (state.mode === 'real') {
+        // Get user's deposit tier for real targets
+        const tier = currentUser.depositTier || 1000;
+        
+        // Set targets based on tier
+        const targets = {
+            1000: { stake: 5000, win: 3000 },
+            5000: { stake: 20000, win: 15000 },
+            10000: { stake: 40000, win: 30000 }
+        };
+        
+        target = targets[tier]?.stake || 5000;
+        staked = state.stakedReal || 0;
+        p = Math.min((staked / target) * 100, 99);
+        label = `REAL GAUGE: ₦${staked.toLocaleString()} / ₦${target.toLocaleString()} (${Math.floor(p)}%)`;
+        
+    } else {
+        // Demo mode - simpler gauge
+        staked = state.stakedDemo || 0;
+        target = 100000; // Fixed demo target
+        p = Math.min((staked / target) * 100, 99);
+        label = `DEMO GAUGE: ${Math.floor(p)}%`;
+    }
+    
+    document.getElementById('bar-fill').style.width = p + "%";
+    document.getElementById('gauge-label').innerText = label;
+}
+
+async function setMode(m) {
+  try {
+    console.log("Attempting to switch to mode:", m);
+    
+    const token = localStorage.getItem("token");
+    
+    const response = await fetch(API + "/user/switch-balance-mode", {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ mode: m })
+    });
+    
+    const data = await response.json();
+    console.log("Switch mode response:", data);
+    
+    if (data.success) {
+      state.mode = m;
+      
+      // Update button styles
+      document.getElementById('real-btn').className = m === 'real' ? 'bal-card active-bal' : 'bal-card';
+      document.getElementById('demo-btn').className = m === 'demo' ? 'bal-card active-bal' : 'bal-card';
+      
+      // Update balance display
+      if (m === 'real') {
+        document.getElementById('real-bal').innerText = currentUser.balance.toLocaleString();
+      } else {
+        document.getElementById('demo-bal').innerText = currentUser.demoBalance.toLocaleString();
+      }
+      
+      updateGauge();
+    } else {
+      console.error("Switch failed:", data.message);
+      alert(data.message || "Failed to switch balance");
+    }
+  } catch (error) {
+    console.error("Switch mode error:", error);
+    alert("Network error switching balance");
+  }
+}
+
+function setTier(s, btn) {
+    state.currentStake = s;
+    document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+function showBank(amt) {
+    state.depositTier = amt;
+    closeScreens();
+    document.getElementById('bank-screen').classList.add('visible');
+    
+    // Update bank details with selected amount
+    const bankDetails = document.querySelector('#bank-screen p');
+    if (bankDetails) {
+        bankDetails.innerHTML = `
+            Transfer <b>₦${amt.toLocaleString()}</b> to:<br>
+            <b>KUDA BANK | 2022675714 | IYANDA ISREAL</b><br><br>
+            After payment, click "I HAVE PAID" and admin will verify.
+        `;
+    }
+}
+
+async function confirmPayment() {
+    const amount = state.depositTier; // From showBank() function
+    if (!amount || amount < 1000) {
+        alert("Please select a deposit amount first");
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem("token");
+        
+        // Show processing
+        const btn = document.querySelector('#bank-screen button');
+        const originalText = btn.textContent;
+        btn.textContent = "PROCESSING...";
+        btn.disabled = true;
+        
+        const response = await fetch(API + "/deposit/request", {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({ 
+                amount: amount,
+                paymentProof: "Bank Transfer - Awaiting verification"
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`✅ Deposit request submitted!\nAmount: ₦${amount.toLocaleString()}\nAdmin will verify and approve.`);
+            closeScreens();
+            
+            // Refresh user data to show pending deposit
+            loadUser();
+        } else {
+            alert("Deposit failed: " + data.message);
+        }
+        
+    } catch (error) {
+        console.error("Deposit error:", error);
+        alert("Network error. Please try again.");
+    } finally {
+        // Reset button
+        const btn = document.querySelector('#bank-screen button');
+        if (btn) {
+            btn.textContent = "I HAVE PAID";
+            btn.disabled = false;
+        }
+    }
+}
+
+function requestWithdrawal() {
+    const bank = document.getElementById('banks').value;
+    const num = document.getElementById('acc_num').value;
+
+    if(!bank || !num) return alert("Fill all details!");
+    
+    // Final Hard Check
+    alert("PROCESSING: Your gauge must reach 100% and be verified by Admin. Status: PENDING (98% Complete)");
+}
+    function closeScreens() { document.querySelectorAll('.screen').forEach(s => s.classList.remove('visible')); }
+
+    setInterval(() => {
+        const names = ["Efe", "Tobi", "Sade", "Uche", "Bisi", "Musa"];
+        const n = names[Math.floor(Math.random()*names.length)];
+        const a = [5000, 12000, 8500, 25000][Math.floor(Math.random()*4)];
+        document.getElementById('feed-text').innerHTML = `🔥 ${n} just withdrew ₦${a.toLocaleString()}!`;
+    }, 9000);
+
+    function logout() {
+        localStorage.removeItem("token");
+        location.href = "auth.html";
+    }
+
+    // ========== WITHDRAWAL SYSTEM ==========
+
+// Save bank details
+async function saveBankDetails() {
+    const bankName = document.getElementById('banks').value;
+    const accountName = document.getElementById('acc_name').value.trim();
+    const accountNumber = document.getElementById('acc_num').value.trim();
+    
+    if (!bankName || !accountName || !accountNumber) {
+        alert("Please fill all bank details");
+        return;
+    }
+    
+    // Validate account number (numbers only)
+    if (!/^\d+$/.test(accountNumber)) {
+        alert("Account number must contain only numbers");
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(API + "/user/save-bank-details", {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({ bankName, accountName, accountNumber })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert("✅ Bank details saved!");
+            document.getElementById('bank-details-form').style.display = 'none';
+            document.getElementById('withdrawal-form').style.display = 'block';
+            checkWithdrawalRequirements();
+        } else {
+            alert(data.message || "Failed to save bank details");
+        }
+    } catch (error) {
+        console.error("Save bank error:", error);
+        alert("Network error");
+    }
+}
+
+// Check withdrawal requirements
+async function checkWithdrawalRequirements() {
+    try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(API + "/withdrawal/requirements", {
+            headers: { 
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const reqs = data.requirements;
+            const prog = data.progress;
+            
+            // Update requirement display
+            document.getElementById('stake-req').textContent = `₦${reqs.stakeTarget.toLocaleString()}`;
+            document.getElementById('win-req').textContent = `₦${reqs.winTarget.toLocaleString()}`;
+            
+            // Update status text
+            let statusText = "";
+            if (prog.bothRequirementsMet) {
+                if (data.adminUnlocked) {
+                    statusText = "✅ READY TO WITHDRAW";
+                    document.getElementById('withdrawal-unlock-message').style.display = 'none';
+                    document.getElementById('withdrawal-ready').style.display = 'block';
+                } else {
+                    statusText = "⏳ WAITING FOR ADMIN UNLOCK";
+                    document.getElementById('withdrawal-unlock-message').style.display = 'block';
+                    document.getElementById('withdrawal-ready').style.display = 'none';
+                }
+            } else {
+                statusText = `Requirements: ${prog.stakeProgress}% staked, ${prog.winProgress}% won`;
+                document.getElementById('withdrawal-unlock-message').style.display = 'none';
+                document.getElementById('withdrawal-ready').style.display = 'none';
+            }
+            
+            document.getElementById('withdrawal-status-text').textContent = statusText;
+            
+        }
+    } catch (error) {
+        console.error("Check requirements error:", error);
+    }
+}
+
+// Submit withdrawal request
+async function submitWithdrawalRequest() {
+    const amount = document.getElementById('withdraw-amount').value.trim();
+    
+    if (!amount || parseFloat(amount) <= 0) {
+        alert("Please enter a valid amount");
+        return;
+    }
+    
+    if (parseFloat(amount) > currentUser.balance) {
+        alert("Amount exceeds your balance");
+        return;
+    }
+    
+    if (!confirm(`Request withdrawal of ₦${parseFloat(amount).toLocaleString()}?`)) {
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(API + "/withdrawal/request", {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({ amount })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert("✅ Withdrawal request submitted!\nAdmin will review and process.");
+            document.getElementById('withdraw-amount').value = '';
+        } else {
+            alert(data.message || "Withdrawal failed");
+        }
+    } catch (error) {
+        console.error("Withdrawal request error:", error);
+        alert("Network error");
+    }
+}
+
+// Check bank details on page load
+async function checkBankDetails() {
+    try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(API + "/user/me", {
+            headers: { 
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.user) {
+            // If user already has bank details, show withdrawal form
+            if (data.user.bankName && data.user.accountNumber) {
+                document.getElementById('bank-details-form').style.display = 'none';
+                document.getElementById('withdrawal-form').style.display = 'block';
+                checkWithdrawalRequirements();
+            }
+        }
+    } catch (error) {
+        console.error("Check bank details error:", error);
+    }
+}
+
+window.onload = async () => {
+    await loadUser();
+    
+    // Check if user has real balance and set to real mode if they do
+    if (currentUser && currentUser.balance && currentUser.balance >= state.currentStake) {
+        setMode('real');
+    } else {
+        // Default to demo if no real balance
+        setMode('demo');
+    }
+};
+</script>
+
+<!-- Audio Controller -->
+<script src="audio-controller.js"></script>
+<script>
+    // Simple toggle function
+    function toggleMusic() {
+        if (window.audioController) {
+            window.audioController.toggleMute();
+        } else {
+            // Fallback if audio controller not loaded
+            const isMuted = localStorage.getItem('musicMuted') === 'true';
+            const newMuted = !isMuted;
+            localStorage.setItem('musicMuted', newMuted);
+            
+            const btn = document.getElementById('mute-btn');
+            if (btn) {
+                btn.innerHTML = newMuted ? '🔇' : '🔊';
+                btn.style.color = newMuted ? '#888' : '#fff';
+            }
+            
+            // Reload to apply changes
+            location.reload();
+        }
+    }
+    
+    // Auto-update button on load
+    window.addEventListener('load', function() {
+        console.log('🎮 Game loaded, checking audio...');
+        
+        // Update mute button
+        const isMuted = localStorage.getItem('musicMuted') === 'true';
+        const btn = document.getElementById('mute-btn');
+        if (btn) {
+            btn.innerHTML = isMuted ? '🔇' : '🔊';
+            btn.style.color = isMuted ? '#888' : '#fff';
+        }
+        
+        // Try to auto-start after 2 seconds
+        setTimeout(() => {
+            if (!isMuted && window.audioController && window.audioController.audio.paused) {
+                console.log('🔄 Attempting auto-start...');
+                window.audioController.audio.play().catch(e => {
+                    console.log('Auto-start failed, needs click');
+                });
+            }
+        }, 2000);
+    });
+</script>
+
+</body>
+</html>
