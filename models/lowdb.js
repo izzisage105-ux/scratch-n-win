@@ -1,26 +1,19 @@
-const { Low } = require('lowdb');
-const { JSONFile } = require('lowdb/node');
-const path = require('path');
-const fs = require('fs');
+const { Low } = require("lowdb");
+const { Memory } = require("lowdb");
 
-const file = path.join(__dirname, '../database.json');
+const adapter = new Memory();
+const db = new Low(adapter);
 
-// Initialize database
-async function initializeDB() {
-    const adapter = new JSONFile(file);
-    const db = new Low(adapter, {
-        users: [],
-        games: [],
-        withdrawals: [],
-        deposits: [],
-        settings: { audioEnabled: true }
-    });
-
-    await db.read();
-    await db.write();
-    
-    console.log('✅ LowDB initialized');
-    return db;
+async function initDB() {
+  await db.read();
+  db.data ||= {
+    users: [],
+    games: [],
+    deposits: []
+  };
+  await db.write();
 }
 
-module.exports = { initializeDB };
+initDB();
+
+module.exports = db;
