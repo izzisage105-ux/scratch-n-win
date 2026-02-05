@@ -3,13 +3,12 @@ const cors = require("cors");
 const path = require("path");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const fs = require("fs"); // ADD THIS
+const fs = require("fs");
 require("dotenv").config();
 
 const app = express();
 
 // ========== FIX FOR VERCEL ==========
-// Vercel is serverless - use in-memory storage
 let memoryDb = {
   users: [],
   games: [],
@@ -21,17 +20,13 @@ let memoryDb = {
 
 const db = {
   data: memoryDb,
-  read: async function() {
-    return this.data;
-  },
-  write: async function() {
-    return Promise.resolve();
-  }
+  read: async function() { return this.data; },
+  write: async function() { return Promise.resolve(); }
 };
 
-// Initialize with demo admin account for Vercel
+// Initialize with demo admin
 (async () => {
-  console.log("✅ Database ready for Vercel (in-memory)");
+  console.log("✅ Database ready");
   
   const hasAdmin = db.data.users.some(u => u.username === "admin");
   if (!hasAdmin) {
@@ -61,70 +56,84 @@ const db = {
       adminRole: "Main Admin",
       createdAt: new Date().toISOString()
     });
-    
-    console.log("✅ Demo admin account created for Vercel");
   }
 })();
 
-// ========== CORS CONFIGURATION ==========
+// ========== MIDDLEWARE ==========
 app.use(cors());
 app.use(express.json());
 
-// ========== STATIC FILE SERVING FIX ==========
-// Serve static files from current directory
-app.use(express.static(__dirname));
+// ========== STATIC FILES FROM PUBLIC FOLDER ==========
+const publicPath = path.join(__dirname, 'public');
+app.use(express.static(publicPath));
 
-// Add this middleware to fix HTML content type
-app.use((req, res, next) => {
-  const url = req.url.toLowerCase();
-  if (url.endsWith('.html') || url === '/' || !url.includes('.')) {
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  }
-  next();
-});
+// Check if public folder exists
+if (!fs.existsSync(publicPath)) {
+  console.warn("⚠️  Public folder not found! Creating it...");
+  fs.mkdirSync(publicPath, { recursive: true });
+}
 
-// ========== ROUTES FOR HTML PAGES ==========
-// Main route - serve game.html
+// ========== ROUTES ==========
+// Main page - try public/game.html first, then root
 app.get("/", (req, res) => {
-  const gamePath = path.join(__dirname, 'game.html');
-  if (fs.existsSync(gamePath)) {
-    res.sendFile(gamePath);
-  } else {
-    // Fallback if game.html doesn't exist
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>Scratch & Win</title></head>
-      <body>
-        <h1>Game Loading...</h1>
-        <p>Check if game.html exists in the project root.</p>
-        <a href="/api/status">Check API Status</a>
-      </body>
-      </html>
-    `);
+  const pathsToTry = [
+    path.join(publicPath, 'game.html'),
+    path.join(publicPath, 'index.html'),
+    path.join(__dirname, 'game.html'),
+    path.join(__dirname, 'index.html')
+  ];
+  
+  for (const filePath of pathsToTry) {
+    if (fs.existsSync(filePath)) {
+      return res.sendFile(filePath);
+    }
   }
+  
+  // Fallback
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>Scratch & Win</title></head>
+    <body>
+      <h1>Game Loading...</h1>
+      <p>Looking in: ${publicPath}</p>
+      <p>Files found: ${fs.existsSync(publicPath) ? fs.readdirSync(publicPath).join(', ') : 'No public folder'}</p>
+      <a href="/api/status">API Status</a>
+    </body>
+    </html>
+  `);
 });
 
-// Route for other HTML files
+// Serve HTML files from public folder
 app.get("/*.html", (req, res) => {
-  const filePath = path.join(__dirname, req.path);
+  const filePath = path.join(publicPath, req.path);
   if (fs.existsSync(filePath)) {
     res.sendFile(filePath);
   } else {
-    res.status(404).send(`<h1>Page not found: ${req.path}</h1>`);
+    res.status(404).send(`<h1>404: ${req.path} not found in public folder</h1>`);
   }
 });
 
-// API status check
+// API status
 app.get("/api/status", (req, res) => {
+  const hasPublic = fs.existsSync(publicPath);
+  const publicFiles = hasPublic ? fs.readdirSync(publicPath) : [];
+  const rootFiles = fs.readdirSync(__dirname);
+  
   res.json({ 
     success: true, 
     message: "Scratch & Win API", 
-    database: "In-memory (Vercel)",
-    time: new Date().toISOString(),
-    files: fs.readdirSync(__dirname).filter(f => f.endsWith('.html'))
+    database: "In-memory",
+    publicFolder: hasPublic,
+    publicFiles: publicFiles.filter(f => f.endsWith('.html')),
+    rootFiles: rootFiles.filter(f => f.endsWith('.html')),
+    paths: {
+      publicPath: publicPath,
+      rootPath: __dirname
+    }
   });
 });
+
 
 // ========== GAME LOGIC (5 wins in 25 games) ==========
 class GameLogic {
