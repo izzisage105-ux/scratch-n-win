@@ -60,8 +60,20 @@ const db = {
 })();
 
 // ========== MIDDLEWARE ==========
-app.use(cors());
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow all origins
+    callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
 app.use(express.json());
+
+// Handle preflight requests
+app.options('*', cors());
 
 // ========== STATIC FILES FROM PUBLIC FOLDER ==========
 const publicPath = path.join(__dirname, 'public');
@@ -134,6 +146,20 @@ app.get("/api/status", (req, res) => {
   });
 });
 
+// API root endpoint
+app.get("/api", (req, res) => {
+  res.json({ success: true, message: "Scratch & Win API", database: "In-memory (Vercel)" });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    service: 'scratch-win-game',
+    version: '1.0.0'
+  });
+});
 
 // ========== GAME LOGIC (5 wins in 25 games) ==========
 class GameLogic {
@@ -390,10 +416,7 @@ async function initializeAdminAccounts() {
 // Call initialization
 initializeAdminAccounts();
 
-// ========== ROUTES ==========
-app.get("/", (req, res) => {
-  res.json({ success: true, message: "Scratch & Win API", database: "In-memory (Vercel)" });
-});
+// ========== API ROUTES ==========
 
 // REGISTER
 app.post("/auth/register", async (req, res) => {
