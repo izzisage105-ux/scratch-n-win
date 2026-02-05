@@ -41,7 +41,8 @@
     </div>
     
     <script>
-        const API = "http://localhost:5000";
+  window.API_BASE_URL = window.location.origin;
+        const API = window.location.origin;
         let currentMode = 'demo';
         
         const sections = [

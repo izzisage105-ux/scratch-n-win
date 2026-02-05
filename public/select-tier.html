@@ -133,7 +133,8 @@
   </div>
 
 <script>
-    const API = "http://localhost:5000";
+  window.API_BASE_URL = window.location.origin;
+    const API = window.location.origin;
     let selectedTier = null;
     
     function selectTier(tier) {
@@ -216,6 +217,7 @@
 </script>
 <script src="audio-controller.js"></script>
 <script>
+  window.API_BASE_URL = window.location.origin;
     // Auto-start audio on these pages too
     window.addEventListener('load', () => {
         setTimeout(() => {
@@ -226,6 +228,7 @@
     });
 </script>
 <script>
+  window.API_BASE_URL = window.location.origin;
 // Audio for login/register pages
 (function() {
     console.log('🎵 Setting up page audio...');
