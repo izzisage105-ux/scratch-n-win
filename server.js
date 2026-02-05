@@ -3,6 +3,7 @@ const cors = require("cors");
 const path = require("path");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const fs = require("fs"); // ADD THIS
 require("dotenv").config();
 
 const app = express();
@@ -24,7 +25,6 @@ const db = {
     return this.data;
   },
   write: async function() {
-    console.log("📝 Data saved in memory (Vercel deployment)");
     return Promise.resolve();
   }
 };
@@ -67,26 +67,63 @@ const db = {
 })();
 
 // ========== CORS CONFIGURATION ==========
-const corsOptions = {
-  origin: true,
-  credentials: true,
-  optionsSuccessStatus: 200
-};
-
-app.use(cors(corsOptions));
+app.use(cors());
 app.use(express.json());
 
-// ========== STATIC FILE SERVING ==========
-app.use(express.static(path.join(__dirname)));
+// ========== STATIC FILE SERVING FIX ==========
+// Serve static files from current directory
+app.use(express.static(__dirname));
 
-// Serve HTML files correctly
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'game.html'));
+// Add this middleware to fix HTML content type
+app.use((req, res, next) => {
+  const url = req.url.toLowerCase();
+  if (url.endsWith('.html') || url === '/' || !url.includes('.')) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  }
+  next();
 });
 
-app.get('/:page.html', (req, res) => {
-  const page = req.params.page;
-  res.sendFile(path.join(__dirname, `${page}.html`));
+// ========== ROUTES FOR HTML PAGES ==========
+// Main route - serve game.html
+app.get("/", (req, res) => {
+  const gamePath = path.join(__dirname, 'game.html');
+  if (fs.existsSync(gamePath)) {
+    res.sendFile(gamePath);
+  } else {
+    // Fallback if game.html doesn't exist
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Scratch & Win</title></head>
+      <body>
+        <h1>Game Loading...</h1>
+        <p>Check if game.html exists in the project root.</p>
+        <a href="/api/status">Check API Status</a>
+      </body>
+      </html>
+    `);
+  }
+});
+
+// Route for other HTML files
+app.get("/*.html", (req, res) => {
+  const filePath = path.join(__dirname, req.path);
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).send(`<h1>Page not found: ${req.path}</h1>`);
+  }
+});
+
+// API status check
+app.get("/api/status", (req, res) => {
+  res.json({ 
+    success: true, 
+    message: "Scratch & Win API", 
+    database: "In-memory (Vercel)",
+    time: new Date().toISOString(),
+    files: fs.readdirSync(__dirname).filter(f => f.endsWith('.html'))
+  });
 });
 
 // ========== GAME LOGIC (5 wins in 25 games) ==========
