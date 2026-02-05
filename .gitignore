@@ -37,3 +37,18 @@ logs/
 # Backup files
 *.bak
 *.backup
+
+# ========== ADD THESE ==========
+# Build outputs (if you add React/Vue later)
+.next/
+dist/
+build/
+out/
+
+# Test coverage
+coverage/
+
+# Package manager lock files (optional - some people keep them)
+# package-lock.json  # ← Remove comment if you want to ignore
+# yarn.lock
+# pnpm-lock.yaml
