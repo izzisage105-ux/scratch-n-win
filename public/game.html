@@ -520,6 +520,7 @@ function triggerWin(amt) {
         }
     }, 3000);
 }
+
 function updateGauge() {
     let p, label, target, staked;
     
@@ -527,14 +528,14 @@ function updateGauge() {
         // Get user's deposit tier for real targets
         const tier = currentUser.depositTier || 1000;
         
-        // Set targets based on tier
+        // Set targets based on tier - UPDATE THESE!
         const targets = {
-            1000: { stake: 5000, win: 3000 },
-            5000: { stake: 20000, win: 15000 },
-            10000: { stake: 40000, win: 30000 }
+            1000: { stake: 10000, win: 30000 },   // Updated
+            5000: { stake: 50000, win: 100000 },  // Updated
+            10000: { stake: 150000, win: 300000 } // Updated
         };
         
-        target = targets[tier]?.stake || 5000;
+        target = targets[tier]?.stake || 15000;
         staked = state.stakedReal || 0;
         p = Math.min((staked / target) * 100, 99);
         label = `REAL GAUGE: ₦${staked.toLocaleString()} / ₦${target.toLocaleString()} (${Math.floor(p)}%)`;

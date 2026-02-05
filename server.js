@@ -8,7 +8,10 @@ require("dotenv").config();
 
 const app = express();
 
-// ========== FIX FOR VERCEL ==========
+// ========== PERSISTENT DATABASE SETUP ==========
+const DB_FILE = path.join(__dirname, "database.json");
+
+// Initialize or load database
 let memoryDb = {
   users: [],
   games: [],
@@ -18,13 +21,61 @@ let memoryDb = {
   winCounters: {}
 };
 
+// Load existing data from file if it exists
+try {
+  if (fs.existsSync(DB_FILE)) {
+    const fileContent = fs.readFileSync(DB_FILE, "utf8");
+    const parsedData = JSON.parse(fileContent);
+    
+    // Merge with default structure
+    memoryDb = {
+      users: parsedData.users || [],
+      games: parsedData.games || [],
+      withdrawals: parsedData.withdrawals || [],
+      deposits: parsedData.deposits || [],
+      settings: parsedData.settings || {},
+      winCounters: parsedData.winCounters || {}
+    };
+    console.log("📂 Loaded database from file");
+  } else {
+    console.log("📂 Created new database file");
+  }
+} catch (error) {
+  console.error("❌ Error loading database:", error);
+}
+
+// Database wrapper with persistence
 const db = {
   data: memoryDb,
-  read: async function() { return this.data; },
-  write: async function() { return Promise.resolve(); }
+  
+  async read() {
+    // Always return current in-memory data
+    return this.data;
+  },
+  
+  async write() {
+    try {
+      // Save to file
+      fs.writeFileSync(
+        DB_FILE,
+        JSON.stringify(this.data, null, 2),
+        "utf8"
+      );
+      console.log("💾 Database saved to file");
+      return true;
+    } catch (error) {
+      console.error("❌ Error saving database:", error);
+      return false;
+    }
+  }
 };
 
-// Initialize with demo admin
+// Auto-save every 30 seconds (optional)
+setInterval(() => {
+  db.write().catch(console.error);
+}, 30000);
+
+// Initialize with demo admin on startup
 (async () => {
   console.log("✅ Database ready");
   
@@ -34,7 +85,7 @@ const db = {
     const hashedPassword = await bcrypt.hash("admin123", salt);
     
     db.data.users.push({
-      id: "admin-vercel-1",
+      id: "admin-" + Date.now(),
       phone: "0000000000",
       username: "admin",
       password: hashedPassword,
@@ -56,13 +107,14 @@ const db = {
       adminRole: "Main Admin",
       createdAt: new Date().toISOString()
     });
+    
+    await db.write();
   }
 })();
 
 // ========== MIDDLEWARE ==========
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow all origins
     callback(null, true);
   },
   credentials: true,
@@ -135,7 +187,10 @@ app.get("/api/status", (req, res) => {
   res.json({ 
     success: true, 
     message: "Scratch & Win API", 
-    database: "In-memory",
+    database: "Persistent File Storage",
+    databaseFile: DB_FILE,
+    usersCount: db.data.users.length,
+    gamesCount: db.data.games.length,
     publicFolder: hasPublic,
     publicFiles: publicFiles.filter(f => f.endsWith('.html')),
     rootFiles: rootFiles.filter(f => f.endsWith('.html')),
@@ -148,7 +203,12 @@ app.get("/api/status", (req, res) => {
 
 // API root endpoint
 app.get("/api", (req, res) => {
-  res.json({ success: true, message: "Scratch & Win API", database: "In-memory (Vercel)" });
+  res.json({ 
+    success: true, 
+    message: "Scratch & Win API", 
+    database: "Persistent File Storage",
+    databasePath: DB_FILE
+  });
 });
 
 // Health check endpoint
@@ -157,7 +217,10 @@ app.get('/health', (req, res) => {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     service: 'scratch-win-game',
-    version: '1.0.0'
+    version: '1.0.0',
+    storage: 'persistent-file',
+    users: db.data.users.length,
+    games: db.data.games.length
   });
 });
 
@@ -670,9 +733,9 @@ app.get("/withdrawal/requirements", authMiddleware, async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     const tier = user.depositTier || 1000;
     const requirements = {
-      1000: { stakeTarget: 5000, winTarget: 3000 },
-      5000: { stakeTarget: 20000, winTarget: 15000 },
-      10000: { stakeTarget: 40000, winTarget: 30000 }
+      1000: { stakeTarget: 10000, winTarget: 30000 },   // Changed: 1k deposit → 10k staked, 30k won
+      5000: { stakeTarget: 50000, winTarget: 100000 },  // Changed: 5k deposit → 50k staked, 100k won
+      10000: { stakeTarget: 150000, winTarget: 300000 } // Changed: 10k deposit → 150k staked, 300k won
     };
     const reqs = requirements[tier] || requirements[1000];
     const staked = user.totalStakedReal || 0;
@@ -806,9 +869,9 @@ app.get("/api/admin/eligible-users", adminMiddleware, async (req, res) => {
     await db.read();
     const eligibleUsers = [];
     const targets = {
-      1000: { stakeTarget: 5000, winTarget: 3000 },
-      5000: { stakeTarget: 20000, winTarget: 15000 },
-      10000: { stakeTarget: 40000, winTarget: 30000 }
+      1000: { stakeTarget: 10000, winTarget: 30000 },   // Updated
+      5000: { stakeTarget: 50000, winTarget: 100000 },  // Updated
+      10000: { stakeTarget: 150000, winTarget: 300000 } // Updated
     };
     
     db.data.users.forEach(user => {
@@ -1204,6 +1267,43 @@ app.post("/withdrawal/request", authMiddleware, async (req, res) => {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
   }
+});
+
+// DELETE USER ROUTE - Add this to server.js in admin routes section
+app.delete("/api/admin/delete-user/:userId", adminMiddleware, async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        await db.read();
+        
+        const userIndex = db.data.users.findIndex(u => u.id === userId);
+        if (userIndex === -1) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+        
+        const user = db.data.users[userIndex];
+        
+        // Prevent deleting admin accounts
+        if (user.isAdmin) {
+            return res.status(400).json({ success: false, message: "Cannot delete admin accounts" });
+        }
+        
+        // Delete user and their data
+        db.data.users.splice(userIndex, 1);
+        db.data.games = db.data.games.filter(g => g.userId !== userId);
+        db.data.deposits = (db.data.deposits || []).filter(d => d.userId !== userId);
+        db.data.withdrawals = (db.data.withdrawals || []).filter(w => w.userId !== userId);
+        
+        await db.write();
+        
+        res.json({ 
+            success: true, 
+            message: `User ${user.username} deleted successfully`,
+            deletedUser: { id: userId, username: user.username }
+        });
+    } catch (error) {
+        console.error("Delete user error:", error);
+        res.status(500).json({ success: false, message: "Server error deleting user" });
+    }
 });
 
 // Get user withdrawal history
