@@ -1,10 +1,11 @@
 {
   "name": "scratch-win",
   "version": "1.0.0",
+  "description": "Scratch and Win backend API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js",
+    "dev": "nodemon server.js",
     "build": "echo 'No build step required'"
   },
   "dependencies": {
@@ -15,7 +16,12 @@
     "lowdb": "^5.1.0",
     "dotenv": "^16.0.3"
   },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
   "engines": {
     "node": "24.x"
-  }
+  },
+  "author": "izzisage105-ux",
+  "license": "MIT"
 }
