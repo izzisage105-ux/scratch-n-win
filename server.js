@@ -1626,6 +1626,9 @@ app.get("/user/deposit-history", authMiddleware, async (req, res) => {
   }
 });
 
+// Generate unique referral code for new user
+const newReferralCode = "REF" + Date.now().toString().slice(-6);
+
 // ========== VERCEl EXPORT ==========
 module.exports = app;
 
