@@ -22,35 +22,38 @@ let memoryDb = {
   referrals: []
 };
 
-// Database wrapper with persistence
+// Database wrapper with persistence - FIXED VERSION
 const db = {
   data: null,
   
   async read() {
-    if (this.data === null) {
-      try {
-        if (fs.existsSync(DB_FILE)) {
-          const fileContent = fs.readFileSync(DB_FILE, "utf8");
-          const parsedData = JSON.parse(fileContent);
-          
-          this.data = {
-            users: parsedData.users || [],
-            games: parsedData.games || [],
-            withdrawals: parsedData.withdrawals || [],
-            deposits: parsedData.deposits || [],
-            settings: parsedData.settings || {},
-            winCounters: parsedData.winCounters || {},
-            referrals: parsedData.referrals || []
-          };
-          console.log("📂 Loaded database from file");
-        } else {
-          this.data = memoryDb;
-          console.log("📂 Created new database file");
-        }
-      } catch (error) {
-        console.error("❌ Error loading database:", error);
-        this.data = memoryDb;
+    // FIX: Don't reset data on every read
+    if (this.data !== null) {
+      return this.data;
+    }
+    
+    try {
+      if (fs.existsSync(DB_FILE)) {
+        const fileContent = fs.readFileSync(DB_FILE, "utf8");
+        const parsedData = JSON.parse(fileContent);
+        
+        this.data = {
+          users: parsedData.users || [],
+          games: parsedData.games || [],
+          withdrawals: parsedData.withdrawals || [],
+          deposits: parsedData.deposits || [],
+          settings: parsedData.settings || {},
+          winCounters: parsedData.winCounters || {},
+          referrals: parsedData.referrals || []
+        };
+        console.log("📂 Loaded database from file");
+      } else {
+        this.data = {...memoryDb};
+        console.log("📂 Created new database file");
       }
+    } catch (error) {
+      console.error("❌ Error loading database:", error);
+      this.data = {...memoryDb};
     }
     return this.data;
   },
@@ -70,17 +73,16 @@ const db = {
   }
 };
 
-// Force reload on every read to prevent memory-only storage
-const originalRead = db.read;
-db.read = async function() {
-  this.data = null; // Force reload from file
-  return await originalRead.call(this);
-};
+// REMOVED THE BUGGY CODE - DON'T FORCE RELOAD ON EVERY READ
+// const originalRead = db.read;
+// db.read = async function() {
+//   this.data = null; // <-- THIS WAS THE PROBLEM!
+//   return await originalRead.call(this);
+// };
 
 // Initialize with demo admin on startup
 (async () => {
-  console.log("✅ Database ready");
-  
+  console.log("🔄 Initializing database...");
   const data = await db.read();
   const hasAdmin = data.users.some(u => u.username === "admin");
   if (!hasAdmin) {
@@ -116,7 +118,9 @@ db.read = async function() {
     });
     
     await db.write();
+    console.log("✅ Admin user created");
   }
+  console.log("✅ Database ready");
 })();
 
 // ========== MIDDLEWARE ==========
@@ -186,26 +190,31 @@ app.get("/*.html", (req, res) => {
 });
 
 // API status
-app.get("/api/status", (req, res) => {
-  const hasPublic = fs.existsSync(publicPath);
-  const publicFiles = hasPublic ? fs.readdirSync(publicPath) : [];
-  const rootFiles = fs.readdirSync(__dirname);
-  
-  res.json({ 
-    success: true, 
-    message: "Scratch & Win API", 
-    database: "Persistent File Storage",
-    databaseFile: DB_FILE,
-    usersCount: db.data.users.length,
-    gamesCount: db.data.games.length,
-    publicFolder: hasPublic,
-    publicFiles: publicFiles.filter(f => f.endsWith('.html')),
-    rootFiles: rootFiles.filter(f => f.endsWith('.html')),
-    paths: {
-      publicPath: publicPath,
-      rootPath: __dirname
-    }
-  });
+app.get("/api/status", async (req, res) => {
+  try {
+    const data = await db.read();
+    const hasPublic = fs.existsSync(publicPath);
+    const publicFiles = hasPublic ? fs.readdirSync(publicPath) : [];
+    const rootFiles = fs.readdirSync(__dirname);
+    
+    res.json({ 
+      success: true, 
+      message: "Scratch & Win API", 
+      database: "Persistent File Storage",
+      databaseFile: DB_FILE,
+      usersCount: data.users.length,
+      gamesCount: data.games.length,
+      publicFolder: hasPublic,
+      publicFiles: publicFiles.filter(f => f.endsWith('.html')),
+      rootFiles: rootFiles.filter(f => f.endsWith('.html')),
+      paths: {
+        publicPath: publicPath,
+        rootPath: __dirname
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error getting status" });
+  }
 });
 
 // API root endpoint
@@ -219,16 +228,21 @@ app.get("/api", (req, res) => {
 });
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    service: 'scratch-win-game',
-    version: '1.0.0',
-    storage: 'persistent-file',
-    users: db.data.users.length,
-    games: db.data.games.length
-  });
+app.get('/health', async (req, res) => {
+  try {
+    const data = await db.read();
+    res.json({ 
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      service: 'scratch-win-game',
+      version: '1.0.0',
+      storage: 'persistent-file',
+      users: data.users.length,
+      games: data.games.length
+    });
+  } catch (error) {
+    res.status(500).json({ status: 'unhealthy', error: error.message });
+  }
 });
 
 // ========== GAME LOGIC (5 wins in 25 games) ==========
@@ -424,7 +438,7 @@ const authMiddleware = (req, res, next) => {
 // ========== ADMIN ACCOUNTS INITIALIZATION ==========
 async function initializeAdminAccounts() {
   try {
-    await db.read();
+    const data = await db.read();
     
     const adminAccounts = [
       { username: "admin", password: "admin123", name: "Main Admin", phone: "0000000000" },
@@ -435,7 +449,7 @@ async function initializeAdminAccounts() {
     let createdCount = 0;
     
     for (const adminAccount of adminAccounts) {
-      const existingAdmin = db.data.users.find(u => u.username === adminAccount.username);
+      const existingAdmin = data.users.find(u => u.username === adminAccount.username);
       
       if (!existingAdmin) {
         const salt = await bcrypt.genSalt(10);
@@ -469,7 +483,7 @@ async function initializeAdminAccounts() {
           createdAt: new Date().toISOString()
         };
         
-        db.data.users.push(adminUser);
+        data.users.push(adminUser);
         createdCount++;
       } else if (!existingAdmin.isAdmin) {
         existingAdmin.isAdmin = true;
@@ -495,7 +509,7 @@ initializeAdminAccounts();
 // REGISTER WITH REFERRAL SYSTEM - ONLY THIS ONE SHOULD EXIST
 app.post("/auth/register", async (req, res) => {
   try {
-    await db.read();
+    const data = await db.read();
     const { phone, username, password, referralCode } = req.body;
     
     // VALIDATION: All 4 fields required
@@ -523,7 +537,7 @@ app.post("/auth/register", async (req, res) => {
     }
     
     // Check if referral code exists
-    const referrer = db.data.users.find(u => u.referralCode === referralCode);
+    const referrer = data.users.find(u => u.referralCode === referralCode);
     if (!referrer) {
       return res.status(400).json({ 
         success: false, 
@@ -532,7 +546,7 @@ app.post("/auth/register", async (req, res) => {
     }
     
     // Check if user already exists
-    const existing = db.data.users.find(u => u.phone === phone || u.username === username);
+    const existing = data.users.find(u => u.phone === phone || u.username === username);
     if (existing) {
       return res.status(400).json({ 
         success: false, 
@@ -574,15 +588,15 @@ app.post("/auth/register", async (req, res) => {
     };
     
     // Add new user
-    db.data.users.push(user);
+    data.users.push(user);
     
     // Update referrer's referrals list
-    const referrerIndex = db.data.users.findIndex(u => u.id === referrer.id);
+    const referrerIndex = data.users.findIndex(u => u.id === referrer.id);
     if (referrerIndex !== -1) {
-      if (!db.data.users[referrerIndex].referrals) {
-        db.data.users[referrerIndex].referrals = [];
+      if (!data.users[referrerIndex].referrals) {
+        data.users[referrerIndex].referrals = [];
       }
-      db.data.users[referrerIndex].referrals.push({
+      data.users[referrerIndex].referrals.push({
         userId: user.id,
         username: user.username,
         phone: user.phone,
@@ -593,8 +607,8 @@ app.post("/auth/register", async (req, res) => {
     }
     
     // Create referral record
-    if (!db.data.referrals) db.data.referrals = [];
-    db.data.referrals.push({
+    if (!data.referrals) data.referrals = [];
+    data.referrals.push({
       id: Date.now().toString(),
       referrerId: referrer.id,
       referrerUsername: referrer.username,
@@ -631,9 +645,9 @@ app.post("/auth/register", async (req, res) => {
 // LOGIN
 app.post("/auth/login", async (req, res) => {
   try {
-    await db.read();
+    const data = await db.read();
     const { username, password } = req.body;
-    const user = db.data.users.find(u => u.username === username);
+    const user = data.users.find(u => u.username === username);
     if (!user) return res.status(400).json({ success: false, message: "Invalid credentials" });
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ success: false, message: "Invalid credentials" });
@@ -654,8 +668,8 @@ app.post("/auth/login", async (req, res) => {
 // GET USER INFO
 app.get("/user/me", authMiddleware, async (req, res) => {
   try {
-    await db.read();
-    const user = db.data.users.find(u => u.id === req.user.id);
+    const data = await db.read();
+    const user = data.users.find(u => u.id === req.user.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     res.json({
       success: true,
@@ -680,8 +694,8 @@ app.get("/user/me", authMiddleware, async (req, res) => {
 // CHECK TIER
 app.get("/deposit/has-tier", authMiddleware, async (req, res) => {
   try {
-    await db.read();
-    const user = db.data.users.find(u => u.id === req.user.id);
+    const data = await db.read();
+    const user = data.users.find(u => u.id === req.user.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     res.json({ success: true, hasTier: !!user.depositTier, tier: user.depositTier, demoBalance: user.demoBalance || 46800 });
   } catch (error) {
@@ -696,13 +710,13 @@ app.post("/deposit/select-tier", authMiddleware, async (req, res) => {
     const { tier } = req.body;
     const bonuses = { 1000: 50000, 5000: 250000, 10000: 500000 };
     if (![1000, 5000, 10000].includes(tier)) return res.status(400).json({ success: false, message: "Invalid tier" });
-    await db.read();
-    const userIndex = db.data.users.findIndex(u => u.id === req.user.id);
+    const data = await db.read();
+    const userIndex = data.users.findIndex(u => u.id === req.user.id);
     if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
-    if (db.data.users[userIndex].depositTier) return res.status(400).json({ success: false, message: "Tier already selected" });
-    db.data.users[userIndex].depositTier = tier;
-    db.data.users[userIndex].demoBonus = bonuses[tier];
-    db.data.users[userIndex].demoBalance = bonuses[tier];
+    if (data.users[userIndex].depositTier) return res.status(400).json({ success: false, message: "Tier already selected" });
+    data.users[userIndex].depositTier = tier;
+    data.users[userIndex].demoBonus = bonuses[tier];
+    data.users[userIndex].demoBalance = bonuses[tier];
     await db.write();
     res.json({ success: true, message: "Tier selected", demoBonus: bonuses[tier], currentBalance: bonuses[tier] });
   } catch (error) {
@@ -716,12 +730,12 @@ app.post("/user/switch-balance-mode", authMiddleware, async (req, res) => {
   try {
     const { mode } = req.body;
     if (!['demo', 'real'].includes(mode)) return res.status(400).json({ success: false, message: "Invalid mode" });
-    await db.read();
-    const userIndex = db.data.users.findIndex(u => u.id === req.user.id);
+    const data = await db.read();
+    const userIndex = data.users.findIndex(u => u.id === req.user.id);
     if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
-    db.data.users[userIndex].currentBalanceMode = mode;
+    data.users[userIndex].currentBalanceMode = mode;
     await db.write();
-    const currentBalance = mode === 'demo' ? db.data.users[userIndex].demoBalance : db.data.users[userIndex].realBalance;
+    const currentBalance = mode === 'demo' ? data.users[userIndex].demoBalance : data.users[userIndex].realBalance;
     res.json({ success: true, message: `Switched to ${mode}`, mode, currentBalance });
   } catch (error) {
     console.error(error);
@@ -734,10 +748,10 @@ app.post("/game/play", authMiddleware, async (req, res) => {
   try {
     const { stake, mode = 'demo' } = req.body;
     if (![150, 300, 500, 1000].includes(stake)) return res.status(400).json({ success: false, message: "Invalid stake" });
-    await db.read();
-    const userIndex = db.data.users.findIndex(u => u.id === req.user.id);
+    const data = await db.read();
+    const userIndex = data.users.findIndex(u => u.id === req.user.id);
     if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
-    const user = db.data.users[userIndex];
+    const user = data.users[userIndex];
     const balance = mode === 'demo' ? user.demoBalance : user.realBalance;
     if (balance < stake) return res.status(400).json({ success: false, message: `Insufficient ${mode} balance` });
     const section = gameLogic.getSectionFromStake(stake);
@@ -746,22 +760,22 @@ app.post("/game/play", authMiddleware, async (req, res) => {
     const result = gameLogic.checkForWin(grid);
     
     if (mode === 'demo') {
-      db.data.users[userIndex].demoBalance -= stake;
-      db.data.users[userIndex].totalStakedDemo = (user.totalStakedDemo || 0) + stake;
+      data.users[userIndex].demoBalance -= stake;
+      data.users[userIndex].totalStakedDemo = (user.totalStakedDemo || 0) + stake;
       if (result.isWin) {
-        db.data.users[userIndex].demoBalance += result.winAmount;
-        db.data.users[userIndex].totalWonDemo = (user.totalWonDemo || 0) + result.winAmount;
+        data.users[userIndex].demoBalance += result.winAmount;
+        data.users[userIndex].totalWonDemo = (user.totalWonDemo || 0) + result.winAmount;
       }
     } else {
-      db.data.users[userIndex].realBalance -= stake;
-      db.data.users[userIndex].totalStakedReal = (user.totalStakedReal || 0) + stake;
+      data.users[userIndex].realBalance -= stake;
+      data.users[userIndex].totalStakedReal = (user.totalStakedReal || 0) + stake;
       if (result.isWin) {
-        db.data.users[userIndex].realBalance += result.winAmount;
-        db.data.users[userIndex].totalWonReal = (user.totalWonReal || 0) + result.winAmount;
+        data.users[userIndex].realBalance += result.winAmount;
+        data.users[userIndex].totalWonReal = (user.totalWonReal || 0) + result.winAmount;
       }
     }
-    db.data.users[userIndex].gamesPlayed = (user.gamesPlayed || 0) + 1;
-    db.data.users[userIndex].lastGamePlayed = new Date().toISOString();
+    data.users[userIndex].gamesPlayed = (user.gamesPlayed || 0) + 1;
+    data.users[userIndex].lastGamePlayed = new Date().toISOString();
 
     const game = {
       id: Date.now().toString(),
@@ -772,14 +786,14 @@ app.post("/game/play", authMiddleware, async (req, res) => {
       result: result.isWin ? "win" : "loss",
       gridValues: grid,
       newBalance: mode === 'demo' ? 
-        (db.data.users[userIndex].demoBalance) : 
-        (db.data.users[userIndex].realBalance),
+        (data.users[userIndex].demoBalance) : 
+        (data.users[userIndex].realBalance),
       scratchCount: 0,
       createdAt: new Date().toISOString(),
       matchingIndices: result.matchingIndices || []
     };
 
-    db.data.games.push(game);
+    data.games.push(game);
     await db.write();
     res.json({
       success: true,
@@ -788,7 +802,7 @@ app.post("/game/play", authMiddleware, async (req, res) => {
       isWin: result.isWin,
       gridValues: grid,
       matchingIndices: result.matchingIndices,
-      newBalance: mode === 'demo' ? db.data.users[userIndex].demoBalance : db.data.users[userIndex].realBalance
+      newBalance: mode === 'demo' ? data.users[userIndex].demoBalance : data.users[userIndex].realBalance
     });
   } catch (error) {
     console.error(error);
@@ -799,9 +813,9 @@ app.post("/game/play", authMiddleware, async (req, res) => {
 // GAME HISTORY
 app.get("/user/game-history", authMiddleware, async (req, res) => {
   try {
-    await db.read();
+    const data = await db.read();
     
-    const userGames = db.data.games
+    const userGames = data.games
       .filter(g => g.userId === req.user.id)
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 50);
@@ -834,12 +848,12 @@ app.post("/user/save-bank-details", authMiddleware, async (req, res) => {
   try {
     const { bankName, accountName, accountNumber } = req.body;
     if (!bankName || !accountName || !accountNumber) return res.status(400).json({ success: false, message: "All details required" });
-    await db.read();
-    const userIndex = db.data.users.findIndex(u => u.id === req.user.id);
+    const data = await db.read();
+    const userIndex = data.users.findIndex(u => u.id === req.user.id);
     if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
-    db.data.users[userIndex].bankName = bankName;
-    db.data.users[userIndex].accountName = accountName;
-    db.data.users[userIndex].accountNumber = accountNumber;
+    data.users[userIndex].bankName = bankName;
+    data.users[userIndex].accountName = accountName;
+    data.users[userIndex].accountNumber = accountNumber;
     await db.write();
     res.json({ success: true, message: "Bank details saved" });
   } catch (error) {
@@ -851,8 +865,8 @@ app.post("/user/save-bank-details", authMiddleware, async (req, res) => {
 // WITHDRAWAL REQUIREMENTS
 app.get("/withdrawal/requirements", authMiddleware, async (req, res) => {
   try {
-    await db.read();
-    const user = db.data.users.find(u => u.id === req.user.id);
+    const data = await db.read();
+    const user = data.users.find(u => u.id === req.user.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     const tier = user.depositTier || 1000;
     const requirements = {
@@ -887,12 +901,12 @@ app.get("/withdrawal/requirements", authMiddleware, async (req, res) => {
 // GET USER'S REFERRAL INFO
 app.get("/user/referral-info", authMiddleware, async (req, res) => {
   try {
-    await db.read();
-    const user = db.data.users.find(u => u.id === req.user.id);
+    const data = await db.read();
+    const user = data.users.find(u => u.id === req.user.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     
     // Get referrals made by this user
-    const userReferrals = db.data.referrals.filter(r => r.referrerId === user.id);
+    const userReferrals = data.referrals.filter(r => r.referrerId === user.id);
     
     res.json({
       success: true,
@@ -924,8 +938,8 @@ const adminMiddleware = async (req, res, next) => {
     const secret = process.env.JWT_SECRET || "dev_secret_123";
     const decoded = jwt.verify(token, secret);
     
-    await db.read();
-    const user = db.data.users.find(u => u.id === decoded.id);
+    const data = await db.read();
+    const user = data.users.find(u => u.id === decoded.id);
     
     if (!user || !user.isAdmin) {
       return res.status(403).json({ success: false, message: "Admin only" });
@@ -945,9 +959,9 @@ app.post("/api/admin/login", async (req, res) => {
   try {
     const { username, password } = req.body;
     
-    await db.read();
+    const data = await db.read();
     
-    const user = db.data.users.find(u => u.username === username);
+    const user = data.users.find(u => u.username === username);
     
     if (!user) {
       return res.status(400).json({ success: false, message: "Invalid credentials" });
@@ -993,8 +1007,8 @@ app.post("/api/admin/login", async (req, res) => {
 // Get all users (admin) - WITH REFERRAL FIELDS
 app.get("/api/admin/users", adminMiddleware, async (req, res) => {
   try {
-    await db.read();
-    const users = db.data.users.map(user => ({
+    const data = await db.read();
+    const users = data.users.map(user => ({
       id: user.id,
       username: user.username,
       phone: user.phone,
@@ -1009,7 +1023,7 @@ app.get("/api/admin/users", adminMiddleware, async (req, res) => {
       createdAt: user.createdAt,
       // REFERRAL FIELDS ADDED
       referralCode: user.referralCode || "N/A",
-      referredBy: user.referredBy ? db.data.users.find(u => u.id === user.referredBy)?.username || "Unknown" : "Direct",
+      referredBy: user.referredBy ? data.users.find(u => u.id === user.referredBy)?.username || "Unknown" : "Direct",
       totalReferrals: user.referrals?.length || 0,
       totalReferralDeposits: user.totalReferralDeposits || 0,
       isAdmin: user.isAdmin || false
@@ -1025,12 +1039,12 @@ app.get("/api/admin/users", adminMiddleware, async (req, res) => {
 app.get("/api/admin/user-referrals/:userId", adminMiddleware, async (req, res) => {
   try {
     const userId = req.params.userId;
-    await db.read();
+    const data = await db.read();
     
-    const user = db.data.users.find(u => u.id === userId);
+    const user = data.users.find(u => u.id === userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     
-    const referrals = db.data.referrals.filter(r => r.referrerId === userId);
+    const referrals = data.referrals.filter(r => r.referrerId === userId);
     
     res.json({
       success: true,
@@ -1057,7 +1071,7 @@ app.get("/api/admin/user-referrals/:userId", adminMiddleware, async (req, res) =
 // Get eligible users for withdrawal unlock
 app.get("/api/admin/eligible-users", adminMiddleware, async (req, res) => {
   try {
-    await db.read();
+    const data = await db.read();
     const eligibleUsers = [];
     const targets = {
       1000: { stakeTarget: 10000, winTarget: 30000 },   // Updated
@@ -1065,7 +1079,7 @@ app.get("/api/admin/eligible-users", adminMiddleware, async (req, res) => {
       10000: { stakeTarget: 150000, winTarget: 300000 } // Updated
     };
     
-    db.data.users.forEach(user => {
+    data.users.forEach(user => {
       const tier = user.depositTier || 1000;
       const target = targets[tier] || targets[1000];
       const staked = user.totalStakedReal || 0;
@@ -1096,17 +1110,17 @@ app.get("/api/admin/eligible-users", adminMiddleware, async (req, res) => {
 app.post("/api/admin/unlock-withdrawal/:userId", adminMiddleware, async (req, res) => {
   try {
     const userId = req.params.userId;
-    await db.read();
-    const userIndex = db.data.users.findIndex(u => u.id === userId);
+    const data = await db.read();
+    const userIndex = data.users.findIndex(u => u.id === userId);
     if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
     
-    db.data.users[userIndex].withdrawalUnlocked = true;
+    data.users[userIndex].withdrawalUnlocked = true;
     await db.write();
     
     res.json({ 
       success: true, 
-      message: `Withdrawal unlocked for ${db.data.users[userIndex].username}`,
-      user: { id: userId, username: db.data.users[userIndex].username, withdrawalUnlocked: true }
+      message: `Withdrawal unlocked for ${data.users[userIndex].username}`,
+      user: { id: userId, username: data.users[userIndex].username, withdrawalUnlocked: true }
     });
   } catch (error) {
     console.error(error);
@@ -1118,17 +1132,17 @@ app.post("/api/admin/unlock-withdrawal/:userId", adminMiddleware, async (req, re
 app.post("/api/admin/lock-withdrawal/:userId", adminMiddleware, async (req, res) => {
   try {
     const userId = req.params.userId;
-    await db.read();
-    const userIndex = db.data.users.findIndex(u => u.id === userId);
+    const data = await db.read();
+    const userIndex = data.users.findIndex(u => u.id === userId);
     if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
     
-    db.data.users[userIndex].withdrawalUnlocked = false;
+    data.users[userIndex].withdrawalUnlocked = false;
     await db.write();
     
     res.json({ 
       success: true, 
-      message: `Withdrawal locked for ${db.data.users[userIndex].username}`,
-      user: { id: userId, username: db.data.users[userIndex].username, withdrawalUnlocked: false }
+      message: `Withdrawal locked for ${data.users[userIndex].username}`,
+      user: { id: userId, username: data.users[userIndex].username, withdrawalUnlocked: false }
     });
   } catch (error) {
     console.error(error);
@@ -1139,10 +1153,10 @@ app.post("/api/admin/lock-withdrawal/:userId", adminMiddleware, async (req, res)
 // Get withdrawal requests
 app.get("/api/admin/withdrawal-requests", adminMiddleware, async (req, res) => {
   try {
-    await db.read();
-    const requests = db.data.withdrawals || [];
+    const data = await db.read();
+    const requests = data.withdrawals || [];
     const fullRequests = requests.map(req => {
-      const user = db.data.users.find(u => u.id === req.userId);
+      const user = data.users.find(u => u.id === req.userId);
       return {
         requestId: req.id,
         userId: req.userId,
@@ -1170,10 +1184,10 @@ app.get("/api/admin/withdrawal-requests", adminMiddleware, async (req, res) => {
 app.get("/api/admin/user-withdrawals/:userId", adminMiddleware, async (req, res) => {
   try {
     const userId = req.params.userId;
-    await db.read();
+    const data = await db.read();
     
-    const withdrawals = db.data.withdrawals.filter(w => w.userId === userId);
-    const user = db.data.users.find(u => u.id === userId);
+    const withdrawals = data.withdrawals.filter(w => w.userId === userId);
+    const user = data.users.find(u => u.id === userId);
     
     res.json({
       success: true,
@@ -1194,14 +1208,14 @@ app.post("/api/admin/approve-withdrawal/:requestId", adminMiddleware, async (req
   try {
     const requestId = req.params.requestId;
     const { notes } = req.body;
-    await db.read();
+    const data = await db.read();
     
-    const requestIndex = db.data.withdrawals.findIndex(r => r.id === requestId);
+    const requestIndex = data.withdrawals.findIndex(r => r.id === requestId);
     if (requestIndex === -1) {
       return res.status(404).json({ success: false, message: "Request not found" });
     }
     
-    const request = db.data.withdrawals[requestIndex];
+    const request = data.withdrawals[requestIndex];
     
     if (request.status !== 'pending') {
       return res.status(400).json({ 
@@ -1210,12 +1224,12 @@ app.post("/api/admin/approve-withdrawal/:requestId", adminMiddleware, async (req
       });
     }
     
-    const userIndex = db.data.users.findIndex(u => u.id === request.userId);
+    const userIndex = data.users.findIndex(u => u.id === request.userId);
     if (userIndex === -1) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
     
-    const user = db.data.users[userIndex];
+    const user = data.users[userIndex];
     
     if (user.realBalance < request.amount) {
       return res.status(400).json({ 
@@ -1224,11 +1238,11 @@ app.post("/api/admin/approve-withdrawal/:requestId", adminMiddleware, async (req
       });
     }
     
-    db.data.users[userIndex].realBalance -= request.amount;
+    data.users[userIndex].realBalance -= request.amount;
     
-    db.data.withdrawals[requestIndex].status = 'approved';
-    db.data.withdrawals[requestIndex].approvedAt = new Date().toISOString();
-    db.data.withdrawals[requestIndex].notes = notes || "Approved by admin";
+    data.withdrawals[requestIndex].status = 'approved';
+    data.withdrawals[requestIndex].approvedAt = new Date().toISOString();
+    data.withdrawals[requestIndex].notes = notes || "Approved by admin";
     
     await db.write();
     
@@ -1239,7 +1253,7 @@ app.post("/api/admin/approve-withdrawal/:requestId", adminMiddleware, async (req
         id: requestId, 
         status: 'approved', 
         amount: request.amount,
-        userBalance: db.data.users[userIndex].realBalance
+        userBalance: data.users[userIndex].realBalance
       }
     });
   } catch (error) {
@@ -1253,13 +1267,13 @@ app.post("/api/admin/reject-withdrawal/:requestId", adminMiddleware, async (req,
   try {
     const requestId = req.params.requestId;
     const { notes } = req.body;
-    await db.read();
+    const data = await db.read();
     
-    const requestIndex = db.data.withdrawals.findIndex(r => r.id === requestId);
+    const requestIndex = data.withdrawals.findIndex(r => r.id === requestId);
     if (requestIndex === -1) return res.status(404).json({ success: false, message: "Request not found" });
     
-    db.data.withdrawals[requestIndex].status = 'rejected';
-    db.data.withdrawals[requestIndex].notes = notes || "Rejected by admin";
+    data.withdrawals[requestIndex].status = 'rejected';
+    data.withdrawals[requestIndex].notes = notes || "Rejected by admin";
     
     await db.write();
     
@@ -1280,14 +1294,14 @@ app.post("/api/admin/mark-paid/:requestId", adminMiddleware, async (req, res) =>
     const requestId = req.params.requestId;
     const { paymentProof } = req.body;
     
-    await db.read();
+    const data = await db.read();
     
-    const withdrawalIndex = db.data.withdrawals.findIndex(w => w.id === requestId);
+    const withdrawalIndex = data.withdrawals.findIndex(w => w.id === requestId);
     if (withdrawalIndex === -1) {
       return res.status(404).json({ success: false, message: "Withdrawal not found" });
     }
     
-    const withdrawal = db.data.withdrawals[withdrawalIndex];
+    const withdrawal = data.withdrawals[withdrawalIndex];
     
     if (withdrawal.status !== 'approved') {
       return res.status(400).json({ 
@@ -1296,16 +1310,16 @@ app.post("/api/admin/mark-paid/:requestId", adminMiddleware, async (req, res) =>
       });
     }
     
-    db.data.withdrawals[withdrawalIndex].status = 'paid';
-    db.data.withdrawals[withdrawalIndex].paidAt = new Date().toISOString();
-    db.data.withdrawals[withdrawalIndex].paymentProof = paymentProof || "";
+    data.withdrawals[withdrawalIndex].status = 'paid';
+    data.withdrawals[withdrawalIndex].paidAt = new Date().toISOString();
+    data.withdrawals[withdrawalIndex].paymentProof = paymentProof || "";
     
     await db.write();
     
     res.json({
       success: true,
       message: "Withdrawal marked as paid",
-      withdrawal: db.data.withdrawals[withdrawalIndex]
+      withdrawal: data.withdrawals[withdrawalIndex]
     });
   } catch (error) {
     console.error(error);
@@ -1316,8 +1330,8 @@ app.post("/api/admin/mark-paid/:requestId", adminMiddleware, async (req, res) =>
 // Get all deposit requests (admin)
 app.get("/api/admin/deposit-requests", adminMiddleware, async (req, res) => {
   try {
-    await db.read();
-    const deposits = db.data.deposits || [];
+    const data = await db.read();
+    const deposits = data.deposits || [];
     res.json({ success: true, count: deposits.length, requests: deposits.reverse() });
   } catch (error) {
     console.error(error);
@@ -1330,41 +1344,41 @@ app.post("/api/admin/approve-deposit/:requestId", adminMiddleware, async (req, r
   try {
     const requestId = req.params.requestId;
     const { notes } = req.body;
-    await db.read();
+    const data = await db.read();
     
-    const depositIndex = db.data.deposits.findIndex(d => d.id === requestId);
+    const depositIndex = data.deposits.findIndex(d => d.id === requestId);
     if (depositIndex === -1) return res.status(404).json({ success: false, message: "Deposit not found" });
     
-    const deposit = db.data.deposits[depositIndex];
-    const userIndex = db.data.users.findIndex(u => u.id === deposit.userId);
+    const deposit = data.deposits[depositIndex];
+    const userIndex = data.users.findIndex(u => u.id === deposit.userId);
     
     if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
     
-    db.data.deposits[depositIndex].status = 'approved';
-    db.data.deposits[depositIndex].approvedAt = new Date().toISOString();
-    db.data.deposits[depositIndex].adminNotes = notes || "Approved by admin";
+    data.deposits[depositIndex].status = 'approved';
+    data.deposits[depositIndex].approvedAt = new Date().toISOString();
+    data.deposits[depositIndex].adminNotes = notes || "Approved by admin";
     
-    db.data.users[userIndex].realBalance += deposit.amount;
+    data.users[userIndex].realBalance += deposit.amount;
     
     // 🔥 REFERRAL TRACKING - Check if user was referred and update referral stats
-    const referredUser = db.data.users[userIndex];
+    const referredUser = data.users[userIndex];
     if (referredUser && referredUser.referredBy) {
       // Find referrer
-      const referrerIndex = db.data.users.findIndex(u => u.id === referredUser.referredBy);
+      const referrerIndex = data.users.findIndex(u => u.id === referredUser.referredBy);
       if (referrerIndex !== -1) {
         // Update referrer's total referral deposits
-        db.data.users[referrerIndex].totalReferralDeposits = (db.data.users[referrerIndex].totalReferralDeposits || 0) + deposit.amount;
+        data.users[referrerIndex].totalReferralDeposits = (data.users[referrerIndex].totalReferralDeposits || 0) + deposit.amount;
         
         // Update referral record
-        const referralIndex = db.data.referrals.findIndex(r => r.referredUserId === deposit.userId);
+        const referralIndex = data.referrals.findIndex(r => r.referredUserId === deposit.userId);
         if (referralIndex !== -1) {
-          db.data.referrals[referralIndex].hasDeposited = true;
-          db.data.referrals[referralIndex].totalDeposited = (db.data.referrals[referralIndex].totalDeposited || 0) + deposit.amount;
+          data.referrals[referralIndex].hasDeposited = true;
+          data.referrals[referralIndex].totalDeposited = (data.referrals[referralIndex].totalDeposited || 0) + deposit.amount;
         }
         
         // Update in referrer's referrals array
-        if (db.data.users[referrerIndex].referrals) {
-          const refInArray = db.data.users[referrerIndex].referrals.find(r => r.userId === deposit.userId);
+        if (data.users[referrerIndex].referrals) {
+          const refInArray = data.users[referrerIndex].referrals.find(r => r.userId === deposit.userId);
           if (refInArray) {
             refInArray.hasDeposited = true;
             refInArray.totalDeposited = (refInArray.totalDeposited || 0) + deposit.amount;
@@ -1377,7 +1391,7 @@ app.post("/api/admin/approve-deposit/:requestId", adminMiddleware, async (req, r
     
     res.json({
       success: true,
-      message: `Deposit approved. ₦${deposit.amount} added to ${db.data.users[userIndex].username}'s balance.`,
+      message: `Deposit approved. ₦${deposit.amount} added to ${data.users[userIndex].username}'s balance.`,
       deposit: { id: requestId, status: 'approved', amount: deposit.amount }
     });
   } catch (error) {
@@ -1391,13 +1405,13 @@ app.post("/api/admin/reject-deposit/:requestId", adminMiddleware, async (req, re
   try {
     const requestId = req.params.requestId;
     const { notes } = req.body;
-    await db.read();
+    const data = await db.read();
     
-    const depositIndex = db.data.deposits.findIndex(d => d.id === requestId);
+    const depositIndex = data.deposits.findIndex(d => d.id === requestId);
     if (depositIndex === -1) return res.status(404).json({ success: false, message: "Deposit not found" });
     
-    db.data.deposits[depositIndex].status = 'rejected';
-    db.data.deposits[depositIndex].adminNotes = notes || "Rejected by admin";
+    data.deposits[depositIndex].status = 'rejected';
+    data.deposits[depositIndex].adminNotes = notes || "Rejected by admin";
     
     await db.write();
     
@@ -1418,12 +1432,12 @@ app.post("/api/admin/reject-deposit/:requestId", adminMiddleware, async (req, re
 app.post("/withdrawal/request", authMiddleware, async (req, res) => {
   try {
     const { amount } = req.body;
-    await db.read();
+    const data = await db.read();
     
-    const userIndex = db.data.users.findIndex(u => u.id === req.user.id);
+    const userIndex = data.users.findIndex(u => u.id === req.user.id);
     if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
     
-    const user = db.data.users[userIndex];
+    const user = data.users[userIndex];
     
     if (!user.bankName || !user.accountNumber) {
       return res.status(400).json({ success: false, message: "Save bank details first" });
@@ -1449,7 +1463,7 @@ app.post("/withdrawal/request", authMiddleware, async (req, res) => {
       });
     }
     
-    const pendingWithdrawals = db.data.withdrawals.filter(w => 
+    const pendingWithdrawals = data.withdrawals.filter(w => 
       w.userId === user.id && w.status === 'pending'
     );
     
@@ -1471,7 +1485,7 @@ app.post("/withdrawal/request", authMiddleware, async (req, res) => {
       createdAt: new Date().toISOString()
     };
     
-    db.data.withdrawals.push(withdrawal);
+    data.withdrawals.push(withdrawal);
     await db.write();
     
     res.json({
@@ -1491,14 +1505,14 @@ app.post("/withdrawal/request", authMiddleware, async (req, res) => {
 app.delete("/api/admin/delete-user/:userId", adminMiddleware, async (req, res) => {
     try {
         const userId = req.params.userId;
-        await db.read();
+        const data = await db.read();
         
-        const userIndex = db.data.users.findIndex(u => u.id === userId);
+        const userIndex = data.users.findIndex(u => u.id === userId);
         if (userIndex === -1) {
             return res.status(404).json({ success: false, message: "User not found" });
         }
         
-        const user = db.data.users[userIndex];
+        const user = data.users[userIndex];
         
         // Prevent deleting admin accounts
         if (user.isAdmin) {
@@ -1506,11 +1520,11 @@ app.delete("/api/admin/delete-user/:userId", adminMiddleware, async (req, res) =
         }
         
         // Delete user and their data
-        db.data.users.splice(userIndex, 1);
-        db.data.games = db.data.games.filter(g => g.userId !== userId);
-        db.data.deposits = (db.data.deposits || []).filter(d => d.userId !== userId);
-        db.data.withdrawals = (db.data.withdrawals || []).filter(w => w.userId !== userId);
-        db.data.referrals = (db.data.referrals || []).filter(r => r.referrerId !== userId && r.referredUserId !== userId);
+        data.users.splice(userIndex, 1);
+        data.games = data.games.filter(g => g.userId !== userId);
+        data.deposits = (data.deposits || []).filter(d => d.userId !== userId);
+        data.withdrawals = (data.withdrawals || []).filter(w => w.userId !== userId);
+        data.referrals = (data.referrals || []).filter(r => r.referrerId !== userId && r.referredUserId !== userId);
         
         await db.write();
         
@@ -1528,8 +1542,8 @@ app.delete("/api/admin/delete-user/:userId", adminMiddleware, async (req, res) =
 // Get user withdrawal history
 app.get("/user/withdrawal-history", authMiddleware, async (req, res) => {
   try {
-    await db.read();
-    const withdrawals = (db.data.withdrawals || []).filter(w => w.userId === req.user.id);
+    const data = await db.read();
+    const withdrawals = (data.withdrawals || []).filter(w => w.userId === req.user.id);
     
     res.json({ 
       success: true, 
@@ -1555,15 +1569,15 @@ app.get("/user/withdrawal-history", authMiddleware, async (req, res) => {
 app.post("/deposit/request", authMiddleware, async (req, res) => {
   try {
     const { amount, paymentProof } = req.body;
-    await db.read();
+    const data = await db.read();
     
-    const userIndex = db.data.users.findIndex(u => u.id === req.user.id);
+    const userIndex = data.users.findIndex(u => u.id === req.user.id);
     if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
     
     const deposit = {
       id: Date.now().toString(),
       userId: req.user.id,
-      username: db.data.users[userIndex].username,
+      username: data.users[userIndex].username,
       amount: parseFloat(amount),
       paymentProof: paymentProof || "",
       status: 'pending',
@@ -1572,8 +1586,8 @@ app.post("/deposit/request", authMiddleware, async (req, res) => {
       adminNotes: ""
     };
     
-    if (!db.data.deposits) db.data.deposits = [];
-    db.data.deposits.push(deposit);
+    if (!data.deposits) data.deposits = [];
+    data.deposits.push(deposit);
     await db.write();
     
     res.json({
@@ -1591,8 +1605,8 @@ app.post("/deposit/request", authMiddleware, async (req, res) => {
 // Get user deposit history
 app.get("/user/deposit-history", authMiddleware, async (req, res) => {
   try {
-    await db.read();
-    const deposits = (db.data.deposits || []).filter(d => d.userId === req.user.id);
+    const data = await db.read();
+    const deposits = (data.deposits || []).filter(d => d.userId === req.user.id);
     
     res.json({ 
       success: true, 
