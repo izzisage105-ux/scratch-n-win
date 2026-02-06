@@ -22,32 +22,17 @@ let memoryDb = {
   referrals: []
 };
 
-// Database wrapper with persistence - FIXED VERSION
+// Database wrapper with persistence
 const db = {
   data: null,
   
   async read() {
-    // Return cached data if already loaded
-    if (this.data !== null) {
-      return this.data;
-    }
-    
-    try {
-      // Ensure DB_FILE directory exists
-      const dir = path.dirname(DB_FILE);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      
-      if (fs.existsSync(DB_FILE)) {
-        const fileContent = fs.readFileSync(DB_FILE, "utf8");
-        // Handle empty file
-        if (!fileContent.trim()) {
-          console.log("📂 Database file is empty, initializing...");
-          this.data = { ...memoryDb };
-          await this.write();
-        } else {
+    if (this.data === null) {
+      try {
+        if (fs.existsSync(DB_FILE)) {
+          const fileContent = fs.readFileSync(DB_FILE, "utf8");
           const parsedData = JSON.parse(fileContent);
+          
           this.data = {
             users: parsedData.users || [],
             games: parsedData.games || [],
@@ -57,28 +42,16 @@ const db = {
             winCounters: parsedData.winCounters || {},
             referrals: parsedData.referrals || []
           };
-          console.log(`📂 Loaded database from file with ${this.data.users.length} users`);
+          console.log("📂 Loaded database from file");
+        } else {
+          this.data = memoryDb;
+          console.log("📂 Created new database file");
         }
-      } else {
-        console.log("📂 Database file not found, creating...");
-        this.data = { ...memoryDb };
-        await this.write();
+      } catch (error) {
+        console.error("❌ Error loading database:", error);
+        this.data = memoryDb;
       }
-    } catch (error) {
-      console.error("❌ Error loading database:", error);
-      // Initialize with fresh data on error
-      this.data = { ...memoryDb };
     }
-    
-    // Ensure data structure
-    this.data.users = this.data.users || [];
-    this.data.games = this.data.games || [];
-    this.data.withdrawals = this.data.withdrawals || [];
-    this.data.deposits = this.data.deposits || [];
-    this.data.settings = this.data.settings || {};
-    this.data.winCounters = this.data.winCounters || {};
-    this.data.referrals = this.data.referrals || [];
-    
     return this.data;
   },
   
@@ -87,15 +60,8 @@ const db = {
       if (this.data === null) {
         await this.read();
       }
-      
-      // Ensure directory exists
-      const dir = path.dirname(DB_FILE);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      
       fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), "utf8");
-      console.log(`💾 Database saved to file with ${this.data.users.length} users`);
+      console.log("💾 Database saved to file");
       return true;
     } catch (error) {
       console.error("❌ Error saving database:", error);
@@ -104,18 +70,24 @@ const db = {
   }
 };
 
-// ========== DATABASE INITIALIZATION ==========
+// Force reload on every read to prevent memory-only storage
+const originalRead = db.read;
+db.read = async function() {
+  this.data = null; // Force reload from file
+  return await originalRead.call(this);
+};
+
+// Initialize with demo admin on startup
 (async () => {
-  console.log("🔄 Initializing database...");
-  await db.read();
+  console.log("✅ Database ready");
   
-  // Check if we have users
-  if (db.data.users.length === 0) {
-    console.log("📝 No users found, creating demo admin...");
+  const data = await db.read();
+  const hasAdmin = data.users.some(u => u.username === "admin");
+  if (!hasAdmin) {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash("admin123", salt);
     
-    db.data.users.push({
+    data.users.push({
       id: "admin-" + Date.now(),
       phone: "0000000000",
       username: "admin",
@@ -144,10 +116,7 @@ const db = {
     });
     
     await db.write();
-    console.log("✅ Demo admin created");
   }
-  
-  console.log(`✅ Database ready with ${db.data.users.length} users`);
 })();
 
 // ========== MIDDLEWARE ==========
@@ -174,109 +143,6 @@ if (!fs.existsSync(publicPath)) {
   console.warn("⚠️  Public folder not found! Creating it...");
   fs.mkdirSync(publicPath, { recursive: true });
 }
-
-// ========== DIAGNOSTIC ROUTES ==========
-
-// Database status endpoint
-app.get("/api/database-status", async (req, res) => {
-  try {
-    await db.read();
-    
-    const fileExists = fs.existsSync(DB_FILE);
-    const fileStats = fileExists ? fs.statSync(DB_FILE) : null;
-    const users = db.data.users || [];
-    
-    // Check for common issues
-    const issues = [];
-    if (!fileExists) issues.push("Database file doesn't exist");
-    if (users.length === 0) issues.push("No users in database");
-    
-    res.json({
-      success: true,
-      database: {
-        fileExists: fileExists,
-        filePath: DB_FILE,
-        fileSize: fileStats ? `${(fileStats.size / 1024).toFixed(2)} KB` : 'N/A',
-        lastModified: fileStats ? fileStats.mtime : 'N/A',
-        usersCount: users.length,
-        gamesCount: db.data.games.length,
-        withdrawalsCount: db.data.withdrawals.length,
-        depositsCount: db.data.deposits.length,
-        issues: issues.length > 0 ? issues : "No issues detected"
-      },
-      users: users.map(u => ({
-        id: u.id,
-        username: u.username,
-        isAdmin: u.isAdmin || false,
-        createdAt: u.createdAt
-      }))
-    });
-  } catch (error) {
-    console.error("Database status error:", error);
-    res.status(500).json({ success: false, message: "Database error", error: error.message });
-  }
-});
-
-// Test user persistence
-app.post("/api/test-user-persistence", async (req, res) => {
-  try {
-    await db.read();
-    
-    const testUsername = `testuser_${Date.now()}`;
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash("test123", salt);
-    
-    const testUser = {
-      id: `test-${Date.now()}`,
-      phone: "1111111111",
-      username: testUsername,
-      password: hashedPassword,
-      realBalance: 1000,
-      demoBalance: 50000,
-      depositTier: 1000,
-      demoBonus: 50000,
-      currentBalanceMode: 'demo',
-      totalStakedReal: 0,
-      totalStakedDemo: 0,
-      totalWonReal: 0,
-      totalWonDemo: 0,
-      bankName: 'Test Bank',
-      accountName: 'Test User',
-      accountNumber: '1111111111',
-      withdrawalUnlocked: false,
-      gamesPlayed: 0,
-      isAdmin: false,
-      referralCode: "TEST" + Date.now().toString().slice(-6),
-      referredBy: null,
-      referrals: [],
-      totalReferralDeposits: 0,
-      createdAt: new Date().toISOString()
-    };
-    
-    db.data.users.push(testUser);
-    await db.write();
-    
-    // Verify by reading again
-    await db.read();
-    const userExists = db.data.users.some(u => u.username === testUsername);
-    
-    res.json({
-      success: true,
-      message: userExists ? "User persisted successfully!" : "User NOT persisted!",
-      testUser: {
-        username: testUsername,
-        id: testUser.id,
-        createdAt: testUser.createdAt
-      },
-      totalUsers: db.data.users.length,
-      filePath: DB_FILE,
-      fileExists: fs.existsSync(DB_FILE)
-    });
-  } catch (error) {
-    console.error("Test error:", error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
 
 // ========== ROUTES ==========
 // Main page - try public/game.html first, then root
@@ -320,32 +186,26 @@ app.get("/*.html", (req, res) => {
 });
 
 // API status
-app.get("/api/status", async (req, res) => {
-  try {
-    await db.read();
-    
-    const hasPublic = fs.existsSync(publicPath);
-    const publicFiles = hasPublic ? fs.readdirSync(publicPath) : [];
-    const rootFiles = fs.readdirSync(__dirname);
-    
-    res.json({ 
-      success: true, 
-      message: "Scratch & Win API", 
-      database: "Persistent File Storage",
-      databaseFile: DB_FILE,
-      usersCount: db.data.users.length,
-      gamesCount: db.data.games.length,
-      publicFolder: hasPublic,
-      publicFiles: publicFiles.filter(f => f.endsWith('.html')),
-      rootFiles: rootFiles.filter(f => f.endsWith('.html')),
-      paths: {
-        publicPath: publicPath,
-        rootPath: __dirname
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error getting status" });
-  }
+app.get("/api/status", (req, res) => {
+  const hasPublic = fs.existsSync(publicPath);
+  const publicFiles = hasPublic ? fs.readdirSync(publicPath) : [];
+  const rootFiles = fs.readdirSync(__dirname);
+  
+  res.json({ 
+    success: true, 
+    message: "Scratch & Win API", 
+    database: "Persistent File Storage",
+    databaseFile: DB_FILE,
+    usersCount: db.data.users.length,
+    gamesCount: db.data.games.length,
+    publicFolder: hasPublic,
+    publicFiles: publicFiles.filter(f => f.endsWith('.html')),
+    rootFiles: rootFiles.filter(f => f.endsWith('.html')),
+    paths: {
+      publicPath: publicPath,
+      rootPath: __dirname
+    }
+  });
 });
 
 // API root endpoint
@@ -359,22 +219,16 @@ app.get("/api", (req, res) => {
 });
 
 // Health check endpoint
-app.get('/health', async (req, res) => {
-  try {
-    await db.read();
-    
-    res.json({ 
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      service: 'scratch-win-game',
-      version: '1.0.0',
-      storage: 'persistent-file',
-      users: db.data.users.length,
-      games: db.data.games.length
-    });
-  } catch (error) {
-    res.status(500).json({ status: 'unhealthy', error: error.message });
-  }
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    service: 'scratch-win-game',
+    version: '1.0.0',
+    storage: 'persistent-file',
+    users: db.data.users.length,
+    games: db.data.games.length
+  });
 });
 
 // ========== GAME LOGIC (5 wins in 25 games) ==========
@@ -1758,37 +1612,6 @@ app.get("/user/deposit-history", authMiddleware, async (req, res) => {
   }
 });
 
-// ========== BACKUP SYSTEM ==========
-// Create backup directory
-const BACKUP_DIR = path.join(__dirname, 'backups');
-if (!fs.existsSync(BACKUP_DIR)) {
-  fs.mkdirSync(BACKUP_DIR, { recursive: true });
-}
-
-// Backup database every hour
-setInterval(async () => {
-  try {
-    await db.read();
-    const backupFile = path.join(BACKUP_DIR, `backup-${Date.now()}.json`);
-    fs.writeFileSync(backupFile, JSON.stringify(db.data, null, 2));
-    console.log(`💾 Backup created: ${backupFile}`);
-    
-    // Keep only last 24 backups
-    const files = fs.readdirSync(BACKUP_DIR)
-      .filter(f => f.startsWith('backup-') && f.endsWith('.json'))
-      .sort()
-      .reverse();
-    
-    if (files.length > 24) {
-      for (let i = 24; i < files.length; i++) {
-        fs.unlinkSync(path.join(BACKUP_DIR, files[i]));
-      }
-    }
-  } catch (error) {
-    console.error("Backup error:", error);
-  }
-}, 60 * 60 * 1000); // Every hour
-
 // ========== VERCEl EXPORT ==========
 module.exports = app;
 
@@ -1799,8 +1622,6 @@ if (require.main === module) {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📁 Database: Persistent File Storage`);
     console.log(`📊 Referral System: ACTIVE`);
-    console.log(`📈 Backup System: ACTIVE`);
     console.log(`🌐 Open http://localhost:${PORT} in browser`);
-    console.log(`🔍 Check database status: http://localhost:${PORT}/api/database-status`);
   });
 }
