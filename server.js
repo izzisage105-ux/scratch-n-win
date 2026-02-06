@@ -8,7 +8,7 @@ require("dotenv").config();
 
 const app = express();
 
-// ========== PERSISTENT DATABASE SETUP ==========
+/// ========== PERSISTENT DATABASE SETUP ==========
 const DB_FILE = path.join(__dirname, "database.json");
 
 // Initialize or load database
@@ -18,49 +18,49 @@ let memoryDb = {
   withdrawals: [],
   deposits: [],
   settings: {},
-  winCounters: {}
+  winCounters: {},
+  referrals: []
 };
-
-// Load existing data from file if it exists
-try {
-  if (fs.existsSync(DB_FILE)) {
-    const fileContent = fs.readFileSync(DB_FILE, "utf8");
-    const parsedData = JSON.parse(fileContent);
-    
-    // Merge with default structure
-    memoryDb = {
-      users: parsedData.users || [],
-      games: parsedData.games || [],
-      withdrawals: parsedData.withdrawals || [],
-      deposits: parsedData.deposits || [],
-      settings: parsedData.settings || {},
-      winCounters: parsedData.winCounters || {}
-    };
-    console.log("📂 Loaded database from file");
-  } else {
-    console.log("📂 Created new database file");
-  }
-} catch (error) {
-  console.error("❌ Error loading database:", error);
-}
 
 // Database wrapper with persistence
 const db = {
-  data: memoryDb,
+  data: null,
   
   async read() {
-    // Always return current in-memory data
+    if (this.data === null) {
+      try {
+        if (fs.existsSync(DB_FILE)) {
+          const fileContent = fs.readFileSync(DB_FILE, "utf8");
+          const parsedData = JSON.parse(fileContent);
+          
+          this.data = {
+            users: parsedData.users || [],
+            games: parsedData.games || [],
+            withdrawals: parsedData.withdrawals || [],
+            deposits: parsedData.deposits || [],
+            settings: parsedData.settings || {},
+            winCounters: parsedData.winCounters || {},
+            referrals: parsedData.referrals || []
+          };
+          console.log("📂 Loaded database from file");
+        } else {
+          this.data = memoryDb;
+          console.log("📂 Created new database file");
+        }
+      } catch (error) {
+        console.error("❌ Error loading database:", error);
+        this.data = memoryDb;
+      }
+    }
     return this.data;
   },
   
   async write() {
     try {
-      // Save to file
-      fs.writeFileSync(
-        DB_FILE,
-        JSON.stringify(this.data, null, 2),
-        "utf8"
-      );
+      if (this.data === null) {
+        await this.read();
+      }
+      fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), "utf8");
       console.log("💾 Database saved to file");
       return true;
     } catch (error) {
@@ -70,21 +70,24 @@ const db = {
   }
 };
 
-// Auto-save every 30 seconds (optional)
-setInterval(() => {
-  db.write().catch(console.error);
-}, 30000);
+// Force reload on every read to prevent memory-only storage
+const originalRead = db.read;
+db.read = async function() {
+  this.data = null; // Force reload from file
+  return await originalRead.call(this);
+};
 
 // Initialize with demo admin on startup
 (async () => {
   console.log("✅ Database ready");
   
-  const hasAdmin = db.data.users.some(u => u.username === "admin");
+  const data = await db.read();
+  const hasAdmin = data.users.some(u => u.username === "admin");
   if (!hasAdmin) {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash("admin123", salt);
     
-    db.data.users.push({
+    data.users.push({
       id: "admin-" + Date.now(),
       phone: "0000000000",
       username: "admin",
@@ -105,6 +108,10 @@ setInterval(() => {
       gamesPlayed: 0,
       isAdmin: true,
       adminRole: "Main Admin",
+      referralCode: "ADMIN001",
+      referredBy: null,
+      referrals: [],
+      totalReferralDeposits: 0,
       createdAt: new Date().toISOString()
     });
     
@@ -455,6 +462,10 @@ async function initializeAdminAccounts() {
           gamesPlayed: 0,
           isAdmin: true,
           adminRole: adminAccount.name,
+          referralCode: adminAccount.username.toUpperCase() + "001",
+          referredBy: null,
+          referrals: [],
+          totalReferralDeposits: 0,
           createdAt: new Date().toISOString()
         };
         
@@ -481,32 +492,136 @@ initializeAdminAccounts();
 
 // ========== API ROUTES ==========
 
-// REGISTER
+// REGISTER WITH REFERRAL SYSTEM - ONLY THIS ONE SHOULD EXIST
 app.post("/auth/register", async (req, res) => {
   try {
     await db.read();
-    const { phone, username, password } = req.body;
+    const { phone, username, password, referralCode } = req.body;
+    
+    // VALIDATION: All 4 fields required
+    if (!phone || !username || !password || !referralCode) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "All fields required: phone, username, password, referral code" 
+      });
+    }
+    
+    // VALIDATION: Phone must be only numbers
+    if (!/^\d+$/.test(phone)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Phone must contain only numbers" 
+      });
+    }
+    
+    // VALIDATION: Username must be lowercase only
+    if (!/^[a-z0-9_]+$/.test(username)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Username must be lowercase letters, numbers, or underscores only" 
+      });
+    }
+    
+    // Check if referral code exists
+    const referrer = db.data.users.find(u => u.referralCode === referralCode);
+    if (!referrer) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid referral code" 
+      });
+    }
+    
+    // Check if user already exists
     const existing = db.data.users.find(u => u.phone === phone || u.username === username);
-    if (existing) return res.status(400).json({ success: false, message: "User exists" });
+    if (existing) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Phone or username already exists" 
+      });
+    }
+    
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
+    
+    // Generate unique referral code for new user
+    const newReferralCode = "REF" + Date.now().toString().slice(-6);
+    
     const user = {
       id: Date.now().toString(),
-      phone, username, password: hashedPassword,
-      realBalance: 0, demoBalance: 46800,
-      depositTier: null, demoBonus: 0,
+      phone, 
+      username, 
+      password: hashedPassword,
+      realBalance: 0, 
+      demoBalance: 46800,
+      depositTier: null, 
+      demoBonus: 0,
       currentBalanceMode: 'demo',
-      totalStakedReal: 0, totalStakedDemo: 0,
-      totalWonReal: 0, totalWonDemo: 0,
-      bankName: '', accountName: '', accountNumber: '',
-      withdrawalUnlocked: false, gamesPlayed: 0,
+      totalStakedReal: 0, 
+      totalStakedDemo: 0,
+      totalWonReal: 0, 
+      totalWonDemo: 0,
+      bankName: '', 
+      accountName: '', 
+      accountNumber: '',
+      withdrawalUnlocked: false, 
+      gamesPlayed: 0,
       isAdmin: false,
+      referralCode: newReferralCode,
+      referredBy: referrer.id,
+      referrals: [],
+      totalReferralDeposits: 0,
       createdAt: new Date().toISOString()
     };
+    
+    // Add new user
     db.data.users.push(user);
+    
+    // Update referrer's referrals list
+    const referrerIndex = db.data.users.findIndex(u => u.id === referrer.id);
+    if (referrerIndex !== -1) {
+      if (!db.data.users[referrerIndex].referrals) {
+        db.data.users[referrerIndex].referrals = [];
+      }
+      db.data.users[referrerIndex].referrals.push({
+        userId: user.id,
+        username: user.username,
+        phone: user.phone,
+        joinedAt: new Date().toISOString(),
+        hasDeposited: false,
+        totalDeposited: 0
+      });
+    }
+    
+    // Create referral record
+    if (!db.data.referrals) db.data.referrals = [];
+    db.data.referrals.push({
+      id: Date.now().toString(),
+      referrerId: referrer.id,
+      referrerUsername: referrer.username,
+      referredUserId: user.id,
+      referredUsername: user.username,
+      referralCode: referralCode,
+      joinedAt: new Date().toISOString(),
+      hasDeposited: false,
+      totalDeposited: 0
+    });
+    
     await db.write();
+    
     const token = jwt.sign({ id: user.id, username }, process.env.JWT_SECRET || "dev_secret_123", { expiresIn: "30d" });
-    res.json({ success: true, message: "Registered", token, user: { id: user.id, username, balance: 0, demoBalance: 46800 } });
+    
+    res.json({ 
+      success: true, 
+      message: "Registered successfully with referral",
+      token, 
+      user: { 
+        id: user.id, 
+        username, 
+        balance: 0, 
+        demoBalance: 46800,
+        referralCode: newReferralCode
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
@@ -523,7 +638,13 @@ app.post("/auth/login", async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ success: false, message: "Invalid credentials" });
     const token = jwt.sign({ id: user.id, username }, process.env.JWT_SECRET || "dev_secret_123", { expiresIn: "30d" });
-    res.json({ success: true, message: "Logged in", token, user: { id: user.id, username, balance: user.realBalance, demoBalance: user.demoBalance } });
+    res.json({ success: true, message: "Logged in", token, user: { 
+      id: user.id, 
+      username, 
+      balance: user.realBalance, 
+      demoBalance: user.demoBalance,
+      referralCode: user.referralCode || "N/A"
+    } });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
@@ -539,13 +660,15 @@ app.get("/user/me", authMiddleware, async (req, res) => {
     res.json({
       success: true,
       user: {
-        id: user.id, username: user.username,
+        id: user.id, 
+        username: user.username,
         balance: user.realBalance || 0,
         demoBalance: user.demoBalance || 46800,
         depositTier: user.depositTier,
         currentBalanceMode: user.currentBalanceMode || 'demo',
         totalStakedReal: user.totalStakedReal || 0,
-        totalStakedDemo: user.totalStakedDemo || 0
+        totalStakedDemo: user.totalStakedDemo || 0,
+        referralCode: user.referralCode || "N/A"
       }
     });
   } catch (error) {
@@ -761,6 +884,35 @@ app.get("/withdrawal/requirements", authMiddleware, async (req, res) => {
   }
 });
 
+// GET USER'S REFERRAL INFO
+app.get("/user/referral-info", authMiddleware, async (req, res) => {
+  try {
+    await db.read();
+    const user = db.data.users.find(u => u.id === req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
+    // Get referrals made by this user
+    const userReferrals = db.data.referrals.filter(r => r.referrerId === user.id);
+    
+    res.json({
+      success: true,
+      referralCode: user.referralCode,
+      referralLink: `${req.headers.origin || 'https://your-site.vercel.app'}/register?ref=${user.referralCode}`,
+      totalReferrals: userReferrals.length,
+      referrals: userReferrals.map(r => ({
+        username: r.referredUsername,
+        joinedAt: r.joinedAt,
+        hasDeposited: r.hasDeposited,
+        totalDeposited: r.totalDeposited
+      })),
+      totalReferralDeposits: user.totalReferralDeposits || 0
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 // ========== ADMIN MIDDLEWARE ==========
 const adminMiddleware = async (req, res, next) => {
   const authHeader = req.header("Authorization");
@@ -838,7 +990,7 @@ app.post("/api/admin/login", async (req, res) => {
   }
 });
 
-// Get all users (admin)
+// Get all users (admin) - WITH REFERRAL FIELDS
 app.get("/api/admin/users", adminMiddleware, async (req, res) => {
   try {
     await db.read();
@@ -854,9 +1006,48 @@ app.get("/api/admin/users", adminMiddleware, async (req, res) => {
       withdrawalUnlocked: user.withdrawalUnlocked || false,
       bankDetails: user.bankName ? 'Saved' : 'Not saved',
       lastGame: user.lastGamePlayed,
-      createdAt: user.createdAt
+      createdAt: user.createdAt,
+      // REFERRAL FIELDS ADDED
+      referralCode: user.referralCode || "N/A",
+      referredBy: user.referredBy ? db.data.users.find(u => u.id === user.referredBy)?.username || "Unknown" : "Direct",
+      totalReferrals: user.referrals?.length || 0,
+      totalReferralDeposits: user.totalReferralDeposits || 0,
+      isAdmin: user.isAdmin || false
     }));
     res.json({ success: true, count: users.length, users });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// GET USER'S REFERRAL STATS FOR ADMIN
+app.get("/api/admin/user-referrals/:userId", adminMiddleware, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    await db.read();
+    
+    const user = db.data.users.find(u => u.id === userId);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
+    const referrals = db.data.referrals.filter(r => r.referrerId === userId);
+    
+    res.json({
+      success: true,
+      user: {
+        username: user.username,
+        referralCode: user.referralCode,
+        totalReferrals: referrals.length,
+        totalReferralDeposits: user.totalReferralDeposits || 0
+      },
+      referrals: referrals.map(r => ({
+        referredUser: r.referredUsername,
+        joinedAt: r.joinedAt,
+        hasDeposited: r.hasDeposited,
+        totalDeposited: r.totalDeposited,
+        depositCount: r.totalDeposited > 0 ? 1 : 0
+      }))
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
@@ -1134,7 +1325,7 @@ app.get("/api/admin/deposit-requests", adminMiddleware, async (req, res) => {
   }
 });
 
-// Approve deposit (admin)
+// Approve deposit (admin) - WITH REFERRAL TRACKING
 app.post("/api/admin/approve-deposit/:requestId", adminMiddleware, async (req, res) => {
   try {
     const requestId = req.params.requestId;
@@ -1154,6 +1345,33 @@ app.post("/api/admin/approve-deposit/:requestId", adminMiddleware, async (req, r
     db.data.deposits[depositIndex].adminNotes = notes || "Approved by admin";
     
     db.data.users[userIndex].realBalance += deposit.amount;
+    
+    // 🔥 REFERRAL TRACKING - Check if user was referred and update referral stats
+    const referredUser = db.data.users[userIndex];
+    if (referredUser && referredUser.referredBy) {
+      // Find referrer
+      const referrerIndex = db.data.users.findIndex(u => u.id === referredUser.referredBy);
+      if (referrerIndex !== -1) {
+        // Update referrer's total referral deposits
+        db.data.users[referrerIndex].totalReferralDeposits = (db.data.users[referrerIndex].totalReferralDeposits || 0) + deposit.amount;
+        
+        // Update referral record
+        const referralIndex = db.data.referrals.findIndex(r => r.referredUserId === deposit.userId);
+        if (referralIndex !== -1) {
+          db.data.referrals[referralIndex].hasDeposited = true;
+          db.data.referrals[referralIndex].totalDeposited = (db.data.referrals[referralIndex].totalDeposited || 0) + deposit.amount;
+        }
+        
+        // Update in referrer's referrals array
+        if (db.data.users[referrerIndex].referrals) {
+          const refInArray = db.data.users[referrerIndex].referrals.find(r => r.userId === deposit.userId);
+          if (refInArray) {
+            refInArray.hasDeposited = true;
+            refInArray.totalDeposited = (refInArray.totalDeposited || 0) + deposit.amount;
+          }
+        }
+      }
+    }
     
     await db.write();
     
@@ -1269,7 +1487,7 @@ app.post("/withdrawal/request", authMiddleware, async (req, res) => {
   }
 });
 
-// DELETE USER ROUTE - Add this to server.js in admin routes section
+// DELETE USER ROUTE
 app.delete("/api/admin/delete-user/:userId", adminMiddleware, async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -1292,6 +1510,7 @@ app.delete("/api/admin/delete-user/:userId", adminMiddleware, async (req, res) =
         db.data.games = db.data.games.filter(g => g.userId !== userId);
         db.data.deposits = (db.data.deposits || []).filter(d => d.userId !== userId);
         db.data.withdrawals = (db.data.withdrawals || []).filter(w => w.userId !== userId);
+        db.data.referrals = (db.data.referrals || []).filter(r => r.referrerId !== userId && r.referredUserId !== userId);
         
         await db.write();
         
@@ -1401,8 +1620,8 @@ if (require.main === module) {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📁 Database: In-memory (Vercel compatible)`);
-    console.log(`⚠️  WARNING: Data resets on server restart!`);
+    console.log(`📁 Database: Persistent File Storage`);
+    console.log(`📊 Referral System: ACTIVE`);
     console.log(`🌐 Open http://localhost:${PORT} in browser`);
   });
 }

@@ -5,10 +5,10 @@
     <title>Admin Panel - Scratch & Win</title>
     <style>
         body { background: #0a1929; color: white; font-family: Arial; margin: 0; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
         .header { background: #1a0033; padding: 20px; border-bottom: 3px solid #d4af37; position: relative; }
-        .tabs { display: flex; background: #001e3c; margin: 20px 0; }
-        .tab { padding: 15px 30px; cursor: pointer; border-right: 1px solid #334; }
+        .tabs { display: flex; background: #001e3c; margin: 20px 0; flex-wrap: wrap; }
+        .tab { padding: 15px 20px; cursor: pointer; border-right: 1px solid #334; min-width: 120px; text-align: center; }
         .tab.active { background: #0056b3; }
         .content { background: #001e3c; padding: 20px; border-radius: 8px; }
         .section { background: #0a1929; padding: 20px; margin: 15px 0; border-radius: 8px; }
@@ -21,35 +21,74 @@
         .btn-unlock { background: #17a2b8; color: white; }
         .btn-lock { background: #6c757d; color: white; }
         .btn-delete { background: #8b0000; color: white; }
+        .btn-info { background: #2b579a; color: white; }
+        .referral-badge { background: #d4af37; color: #000; padding: 3px 8px; border-radius: 10px; font-size: 12px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin: 20px 0; }
+        .stat-card { background: linear-gradient(135deg, #1a0033, #0a1929); padding: 20px; border-radius: 8px; border: 1px solid #334; }
+        .stat-value { font-size: 24px; color: #d4af37; font-weight: bold; margin: 10px 0; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; }
+        .modal-content { background: #001e3c; margin: 5% auto; padding: 20px; width: 80%; max-width: 600px; border-radius: 8px; }
+        .close-modal { float: right; font-size: 28px; cursor: pointer; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>👑 ADMIN PANEL - Scratch & Win</h1>
-        <p>Manual Withdrawal Approval System</p>
+        <p>Complete Management System | Total Users: <span id="total-users">0</span></p>
         <button id="logout-btn" style="position:absolute; right:20px; top:20px; background:#dc3545; color:white; border:none; padding:10px 15px; border-radius:4px; cursor:pointer;">
             🚪 Logout
         </button>
     </div>
     
     <div class="container">
+        <!-- REFERRAL STATS -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>📊 Total Referrals</h3>
+                <div class="stat-value" id="total-referrals">0</div>
+                <p>Total referral signups across all users</p>
+            </div>
+            <div class="stat-card">
+                <h3>💰 Referral Deposits</h3>
+                <div class="stat-value" id="total-ref-deposits">₦0</div>
+                <p>Total deposits from referred users</p>
+            </div>
+            <div class="stat-card">
+                <h3>👥 Active Referrers</h3>
+                <div class="stat-value" id="active-referrers">0</div>
+                <p>Users who referred at least 1 person</p>
+            </div>
+            <div class="stat-card">
+                <h3>🎯 Conversion Rate</h3>
+                <div class="stat-value" id="conversion-rate">0%</div>
+                <p>Referred users who made deposits</p>
+            </div>
+        </div>
+        
         <div class="tabs">
             <div class="tab active" onclick="showTab('users')">👥 Users</div>
+            <div class="tab" onclick="showTab('referrals')">🔗 Referrals</div>
             <div class="tab" onclick="showTab('deposits')">💰 Deposits</div>
             <div class="tab" onclick="showTab('withdrawals')">💸 Withdrawals</div>
             <div class="tab" onclick="showTab('unlock')">🔓 Unlock</div>
             <div class="tab" onclick="showTab('game')">🎮 Game</div>
         </div>
         
+        <!-- USERS TAB -->
         <div id="users-tab" class="content">
             <h2>👥 User Management</h2>
+            <div style="margin: 15px 0; display: flex; gap: 10px; align-items: center;">
+                <input type="text" id="user-search" placeholder="Search by username or phone..." style="padding: 8px; width: 300px; border-radius: 4px; border: 1px solid #334; background: #0a1929; color: white;">
+                <button onclick="searchUsers()" class="btn" style="background: #2b579a;">🔍 Search</button>
+                <button onclick="loadUsers()" class="btn" style="background: #444;">🔄 Refresh</button>
+            </div>
             <div class="section">
                 <table id="users-table">
                     <thead>
                         <tr>
-                            <th>ID</th><th>Username</th><th>Tier</th><th>Real Balance</th>
-                            <th>Staked</th><th>Won</th><th>Withdrawal Status</th>
-                            <th>Actions</th>
+                            <th>ID</th><th>Username</th><th>Phone</th><th>Tier</th><th>Real Balance</th>
+                            <th>Staked</th><th>Won</th><th>Referrals</th><th>Ref Deposits</th>
+                            <th>Withdrawal Status</th><th>Actions</th>
                             <th>Delete</th>
                         </tr>
                     </thead>
@@ -58,6 +97,38 @@
             </div>
         </div>
         
+        <!-- REFERRALS TAB -->
+        <div id="referrals-tab" class="content" style="display:none;">
+            <h2>🔗 Referral Management</h2>
+            <div class="section">
+                <h3>📋 All Referral Relationships</h3>
+                <table id="referrals-table">
+                    <thead>
+                        <tr>
+                            <th>Referrer</th><th>Referred User</th><th>Referral Code</th>
+                            <th>Joined</th><th>Deposited?</th><th>Total Deposited</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="referrals-list"></tbody>
+                </table>
+            </div>
+            
+            <div class="section">
+                <h3>🏆 Top Referrers</h3>
+                <table id="top-referrers-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th><th>Username</th><th>Total Referrals</th>
+                            <th>Ref Deposits</th><th>Referral Code</th><th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="top-referrers-list"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- DEPOSITS TAB -->
         <div id="deposits-tab" class="content" style="display:none;">
             <h2>💰 Deposit Requests</h2>
             <div class="section">
@@ -73,6 +144,7 @@
             </div>
         </div>
         
+        <!-- WITHDRAWALS TAB -->
         <div id="withdrawals-tab" class="content" style="display:none;">
             <h2>💸 Withdrawal Requests</h2>
             <div class="section">
@@ -94,6 +166,7 @@
             </div>
         </div>
         
+        <!-- UNLOCK TAB -->
         <div id="unlock-tab" class="content" style="display:none;">
             <h2>🔓 Manual Withdrawal Unlock</h2>
             <div class="section">
@@ -110,6 +183,7 @@
             </div>
         </div>
         
+        <!-- GAME TAB -->
         <div id="game-tab" class="content" style="display:none;">
             <h2>🎮 Game Controls</h2>
             <div class="section">
@@ -117,6 +191,22 @@
                 <p><a href="admin-probabilities.html" style="color: #d4af37;">🎲 Probability Settings</a></p>
                 <p><a href="game.html" style="color: #d4af37;">🎮 Back to Game</a></p>
             </div>
+        </div>
+    </div>
+    
+    <!-- USER REFERRAL DETAILS MODAL -->
+    <div id="userReferralModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeModal('userReferralModal')">&times;</span>
+            <h2 id="modal-user-title">User Referral Details</h2>
+            <div id="modal-user-info"></div>
+            <h3>👥 Referred Users</h3>
+            <table style="width:100%;">
+                <thead>
+                    <tr><th>Username</th><th>Joined</th><th>Deposited</th><th>Total Deposited</th></tr>
+                </thead>
+                <tbody id="modal-referrals-list"></tbody>
+            </table>
         </div>
     </div>
 
@@ -149,31 +239,76 @@
             
             switch(tabName) {
                 case 'users': loadUsers(); break;
+                case 'referrals': loadReferrals(); loadTopReferrers(); break;
                 case 'deposits': loadDeposits(); break;
                 case 'withdrawals': loadWithdrawals(); break;
                 case 'unlock': loadEligibleUsers(); break;
             }
         }
         
-        // Load users
+        // Modal functions
+        function openModal(modalId) {
+            document.getElementById(modalId).style.display = 'block';
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+        
+        // Load users with referral info
         async function loadUsers() {
             try {
                 const response = await fetch(API + "/api/admin/users", { headers: adminHeaders });
                 const data = await response.json();
                 
                 if (data.success) {
+                    document.getElementById('total-users').textContent = data.count;
                     const tbody = document.getElementById('users-list');
                     tbody.innerHTML = '';
                     
+                    // Calculate referral stats
+                    let totalReferrals = 0;
+                    let totalRefDeposits = 0;
+                    let activeReferrers = 0;
+                    let convertedReferrals = 0;
+                    
+                    data.users.forEach(user => {
+                        totalReferrals += user.totalReferrals || 0;
+                        totalRefDeposits += user.totalReferralDeposits || 0;
+                        if (user.totalReferrals > 0) activeReferrers++;
+                        if (user.totalReferralDeposits > 0) convertedReferrals++;
+                    });
+                    
+                    // Update stats
+                    document.getElementById('total-referrals').textContent = totalReferrals;
+                    document.getElementById('total-ref-deposits').textContent = '₦' + totalRefDeposits.toLocaleString();
+                    document.getElementById('active-referrers').textContent = activeReferrers;
+                    const conversionRate = totalReferrals > 0 ? Math.round((convertedReferrals / totalReferrals) * 100) : 0;
+                    document.getElementById('conversion-rate').textContent = conversionRate + '%';
+                    
+                    // Display users
                     data.users.forEach(user => {
                         const row = document.createElement('tr');
                         row.innerHTML = `
                             <td>${user.id.substring(0, 8)}...</td>
-                            <td>${user.username}</td>
+                            <td>
+                                ${user.username}
+                                ${user.isAdmin ? ' <span class="referral-badge">ADMIN</span>' : ''}
+                            </td>
+                            <td>${user.phone || 'N/A'}</td>
                             <td>₦${(user.depositTier || 1000).toLocaleString()}</td>
                             <td>₦${(user.realBalance || 0).toLocaleString()}</td>
                             <td>₦${(user.totalStakedReal || 0).toLocaleString()}</td>
                             <td>₦${(user.totalWonReal || 0).toLocaleString()}</td>
+                            <td>
+                                ${user.totalReferrals > 0 ? 
+                                    `<span class="referral-badge" onclick="viewUserReferrals('${user.id}', '${user.username}')" style="cursor:pointer;">
+                                        ${user.totalReferrals} 👥
+                                    </span>` : 
+                                    '0'
+                                }
+                            </td>
+                            <td>₦${(user.totalReferralDeposits || 0).toLocaleString()}</td>
                             <td>${user.withdrawalUnlocked ? '🔓 Unlocked' : '🔒 Locked'}</td>
                             <td>
                                 <button class="btn ${user.withdrawalUnlocked ? 'btn-lock' : 'btn-unlock'}" 
@@ -199,152 +334,166 @@
             }
         }
         
-        // Load deposits
-        async function loadDeposits() {
+        // View user referral details
+        async function viewUserReferrals(userId, username) {
             try {
-                const response = await fetch(API + "/api/admin/deposit-requests", { headers: adminHeaders });
+                const response = await fetch(API + `/api/admin/user-referrals/${userId}`, { headers: adminHeaders });
                 const data = await response.json();
                 
                 if (data.success) {
-                    const tbody = document.getElementById('deposits-list');
+                    document.getElementById('modal-user-title').textContent = `Referral Details - ${username}`;
+                    
+                    // User info
+                    document.getElementById('modal-user-info').innerHTML = `
+                        <p><strong>Referral Code:</strong> ${data.user.referralCode}</p>
+                        <p><strong>Total Referrals:</strong> ${data.user.totalReferrals}</p>
+                        <p><strong>Total Referral Deposits:</strong> ₦${data.user.totalReferralDeposits.toLocaleString()}</p>
+                        <hr>
+                    `;
+                    
+                    // Referrals list
+                    const tbody = document.getElementById('modal-referrals-list');
                     tbody.innerHTML = '';
                     
-                    data.requests.forEach(deposit => {
-                        const statusColors = {
-                            'pending': '#ffc107',
-                            'approved': '#28a745',
-                            'rejected': '#dc3545'
-                        };
-                        
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td>${deposit.id.substring(0, 8)}...</td>
-                            <td>${deposit.username}</td>
-                            <td>₦${deposit.amount.toLocaleString()}</td>
-                            <td>${deposit.paymentProof ? '📎 Provided' : 'No proof'}</td>
-                            <td style="color: ${statusColors[deposit.status]}">
-                                ${deposit.status.toUpperCase()}
-                            </td>
-                            <td>${new Date(deposit.createdAt).toLocaleString()}</td>
-                            <td>
-                                ${deposit.status === 'pending' ? `
-                                    <button class="btn btn-approve" onclick="approveDeposit('${deposit.id}')">✅ Approve</button>
-                                    <button class="btn btn-reject" onclick="rejectDeposit('${deposit.id}')">❌ Reject</button>
-                                ` : 'No actions'}
-                            </td>
-                        `;
-                        tbody.appendChild(row);
-                    });
+                    if (data.referrals.length > 0) {
+                        data.referrals.forEach(ref => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${ref.referredUser}</td>
+                                <td>${new Date(ref.joinedAt).toLocaleDateString()}</td>
+                                <td>${ref.hasDeposited ? '✅ Yes' : '❌ No'}</td>
+                                <td>₦${ref.totalDeposited.toLocaleString()}</td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#888;">No referrals yet</td></tr>';
+                    }
+                    
+                    openModal('userReferralModal');
                 }
             } catch (error) {
-                console.error("Load deposits error:", error);
-                alert("Failed to load deposits");
+                console.error("Load user referrals error:", error);
+                alert("Failed to load referral details");
             }
         }
         
-        // Load withdrawals
-        async function loadWithdrawals() {
+        // Load all referrals
+        async function loadReferrals() {
             try {
-                const response = await fetch(API + "/api/admin/withdrawal-requests", {
-                    headers: adminHeaders
-                });
+                // First get all users to build referral data
+                const usersResponse = await fetch(API + "/api/admin/users", { headers: adminHeaders });
+                const usersData = await usersResponse.json();
                 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                
-                const data = await response.json();
-                console.log("Withdrawals data:", data);
-                
-                if (data.success) {
-                    const tbody = document.getElementById('withdrawals-list');
+                if (usersData.success) {
+                    const tbody = document.getElementById('referrals-list');
                     tbody.innerHTML = '';
                     
-                    if (data.requests && data.requests.length > 0) {
-                        data.requests.forEach(request => {
-                            const statusColors = {
-                                'pending': '#ffc107',
-                                'approved': '#28a745',
-                                'rejected': '#dc3545',
-                                'paid': '#17a2b8'
-                            };
-                            
+                    // Create array of all referrals
+                    let allReferrals = [];
+                    
+                    usersData.users.forEach(user => {
+                        if (user.referrals && user.referrals.length > 0) {
+                            user.referrals.forEach(ref => {
+                                allReferrals.push({
+                                    referrer: user.username,
+                                    referredUser: ref.username,
+                                    referralCode: user.referralCode,
+                                    joinedAt: ref.joinedAt,
+                                    hasDeposited: ref.hasDeposited,
+                                    totalDeposited: ref.totalDeposited
+                                });
+                            });
+                        }
+                    });
+                    
+                    // Display referrals
+                    if (allReferrals.length > 0) {
+                        allReferrals.forEach(ref => {
                             const row = document.createElement('tr');
                             row.innerHTML = `
-                                <td>${request.requestId ? request.requestId.substring(0, 8) : 'N/A'}...</td>
-                                <td>${request.username || 'Unknown'}</td>
-                                <td>₦${(request.amount || 0).toLocaleString()}</td>
-                                <td>${request.bankName || ''} - ${request.accountNumber || ''}</td>
-                                <td style="color: ${request.userBalance < request.amount ? '#ff6b6b' : '#28a745'}">
-                                    ₦${(request.userBalance || 0).toLocaleString()}
-                                </td>
-                                <td style="color: ${statusColors[request.status] || '#000'}">
-                                    ${(request.status || 'pending').toUpperCase()}
-                                </td>
-                                <td>${new Date(request.requestedAt || Date.now()).toLocaleString()}</td>
+                                <td>${ref.referrer}</td>
+                                <td>${ref.referredUser}</td>
+                                <td><code>${ref.referralCode}</code></td>
+                                <td>${new Date(ref.joinedAt).toLocaleDateString()}</td>
+                                <td>${ref.hasDeposited ? '✅ Yes' : '❌ No'}</td>
+                                <td>₦${ref.totalDeposited.toLocaleString()}</td>
                                 <td>
-                                    ${request.status === 'pending' ? `
-                                        <button class="btn btn-approve" onclick="approveWithdrawal('${request.requestId || request.id}')">✅ Approve</button>
-                                        <button class="btn btn-reject" onclick="rejectWithdrawal('${request.requestId || request.id}')">❌ Reject</button>
-                                    ` : request.status === 'approved' ? `
-                                        <button class="btn btn-unlock" onclick="markPaid('${request.requestId || request.id}')">💰 Mark Paid</button>
-                                    ` : 'No actions'}
+                                    <button class="btn btn-info" onclick="viewUserDetails('${ref.referredUser}')">
+                                        👁️ View
+                                    </button>
                                 </td>
                             `;
                             tbody.appendChild(row);
                         });
                     } else {
-                        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #ccc;">No withdrawal requests found</td></tr>`;
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;">No referral relationships found</td></tr>';
                     }
-                } else {
-                    alert("Failed to load withdrawals: " + (data.message || "Unknown error"));
                 }
             } catch (error) {
-                console.error("Load withdrawals error:", error);
-                alert("Failed to load withdrawals. Check console for details.");
-                
-                // Show empty state
-                const tbody = document.getElementById('withdrawals-list');
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #ff6b6b;">Error loading withdrawals</td></tr>`;
+                console.error("Load referrals error:", error);
+                alert("Failed to load referrals");
             }
         }
         
-        // Load eligible users
-        async function loadEligibleUsers() {
+        // Load top referrers
+        async function loadTopReferrers() {
             try {
-                const response = await fetch(API + "/api/admin/eligible-users", { headers: adminHeaders });
+                const response = await fetch(API + "/api/admin/users", { headers: adminHeaders });
                 const data = await response.json();
                 
                 if (data.success) {
-                    const tbody = document.getElementById('unlock-list');
+                    // Filter users with referrals and sort by total referrals
+                    const referrers = data.users
+                        .filter(user => (user.totalReferrals || 0) > 0)
+                        .sort((a, b) => (b.totalReferrals || 0) - (a.totalReferrals || 0))
+                        .slice(0, 10); // Top 10
+                    
+                    const tbody = document.getElementById('top-referrers-list');
                     tbody.innerHTML = '';
                     
-                    data.users.forEach(user => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td>${user.username}</td>
-                            <td>₦${user.tier.toLocaleString()}</td>
-                            <td>₦${user.staked.toLocaleString()} / ₦${user.stakeTarget.toLocaleString()}</td>
-                            <td>₦${user.won.toLocaleString()} / ₦${user.winTarget.toLocaleString()}</td>
-                            <td>✅ YES</td>
-                            <td>${user.withdrawalUnlocked ? '🔓 Unlocked' : '🔒 Locked'}</td>
-                            <td>
-                                ${!user.withdrawalUnlocked ? 
-                                    `<button class="btn btn-approve" onclick="unlockUser('${user.id}')">🔓 Unlock</button>` :
-                                    `<button class="btn btn-reject" onclick="lockUser('${user.id}')">🔒 Lock</button>`
-                                }
-                            </td>
-                        `;
-                        tbody.appendChild(row);
-                    });
+                    if (referrers.length > 0) {
+                        referrers.forEach((user, index) => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>#${index + 1}</td>
+                                <td>${user.username}</td>
+                                <td>${user.totalReferrals || 0}</td>
+                                <td>₦${(user.totalReferralDeposits || 0).toLocaleString()}</td>
+                                <td><code>${user.referralCode || 'N/A'}</code></td>
+                                <td>
+                                    <button class="btn btn-info" onclick="viewUserReferrals('${user.id}', '${user.username}')">
+                                        Details
+                                    </button>
+                                </td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;">No referrers yet</td></tr>';
+                    }
                 }
             } catch (error) {
-                console.error("Load eligible users error:", error);
-                alert("Failed to load eligible users");
+                console.error("Load top referrers error:", error);
             }
         }
         
-        // User actions
+        // Search users
+        function searchUsers() {
+            const searchTerm = document.getElementById('user-search').value.toLowerCase();
+            if (!searchTerm) {
+                loadUsers();
+                return;
+            }
+            
+            const rows = document.querySelectorAll('#users-list tr');
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(searchTerm) ? '' : 'none';
+            });
+        }
+        
+        // User actions (keep existing functions)
         async function unlockUser(userId) {
             if (!confirm("Unlock withdrawal for this user?")) return;
             
@@ -393,7 +542,6 @@
             }
         }
         
-        // Delete user function
         async function deleteUser(userId, username) {
             if (!confirm(`⚠️ DANGER: Delete user "${username}"?\n\nThis will permanently delete:\n• User account\n• Their game history\n• Their deposit/withdrawal records\n\nThis action cannot be undone!`)) {
                 return;
@@ -415,7 +563,9 @@
                 
                 if (data.success) {
                     alert(`✅ User "${username}" deleted successfully!`);
-                    loadUsers(); // Refresh the user list
+                    loadUsers();
+                    loadReferrals();
+                    loadTopReferrers();
                 } else {
                     alert(data.message || "Failed to delete user");
                 }
@@ -425,7 +575,147 @@
             }
         }
         
-        // Deposit actions
+        // Load deposits (existing function - keep as is)
+        async function loadDeposits() {
+            try {
+                const response = await fetch(API + "/api/admin/deposit-requests", { headers: adminHeaders });
+                const data = await response.json();
+                
+                if (data.success) {
+                    const tbody = document.getElementById('deposits-list');
+                    tbody.innerHTML = '';
+                    
+                    data.requests.forEach(deposit => {
+                        const statusColors = {
+                            'pending': '#ffc107',
+                            'approved': '#28a745',
+                            'rejected': '#dc3545'
+                        };
+                        
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${deposit.id.substring(0, 8)}...</td>
+                            <td>${deposit.username}</td>
+                            <td>₦${deposit.amount.toLocaleString()}</td>
+                            <td>${deposit.paymentProof ? '📎 Provided' : 'No proof'}</td>
+                            <td style="color: ${statusColors[deposit.status]}">
+                                ${deposit.status.toUpperCase()}
+                            </td>
+                            <td>${new Date(deposit.createdAt).toLocaleString()}</td>
+                            <td>
+                                ${deposit.status === 'pending' ? `
+                                    <button class="btn btn-approve" onclick="approveDeposit('${deposit.id}')">✅ Approve</button>
+                                    <button class="btn btn-reject" onclick="rejectDeposit('${deposit.id}')">❌ Reject</button>
+                                ` : 'No actions'}
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                }
+            } catch (error) {
+                console.error("Load deposits error:", error);
+                alert("Failed to load deposits");
+            }
+        }
+        
+        // Load withdrawals (existing function - keep as is)
+        async function loadWithdrawals() {
+            try {
+                const response = await fetch(API + "/api/admin/withdrawal-requests", { headers: adminHeaders });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const tbody = document.getElementById('withdrawals-list');
+                    tbody.innerHTML = '';
+                    
+                    if (data.requests && data.requests.length > 0) {
+                        data.requests.forEach(request => {
+                            const statusColors = {
+                                'pending': '#ffc107',
+                                'approved': '#28a745',
+                                'rejected': '#dc3545',
+                                'paid': '#17a2b8'
+                            };
+                            
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${request.requestId ? request.requestId.substring(0, 8) : 'N/A'}...</td>
+                                <td>${request.username || 'Unknown'}</td>
+                                <td>₦${(request.amount || 0).toLocaleString()}</td>
+                                <td>${request.bankName || ''} - ${request.accountNumber || ''}</td>
+                                <td style="color: ${request.userBalance < request.amount ? '#ff6b6b' : '#28a745'}">
+                                    ₦${(request.userBalance || 0).toLocaleString()}
+                                </td>
+                                <td style="color: ${statusColors[request.status] || '#000'}">
+                                    ${(request.status || 'pending').toUpperCase()}
+                                </td>
+                                <td>${new Date(request.requestedAt || Date.now()).toLocaleString()}</td>
+                                <td>
+                                    ${request.status === 'pending' ? `
+                                        <button class="btn btn-approve" onclick="approveWithdrawal('${request.requestId || request.id}')">✅ Approve</button>
+                                        <button class="btn btn-reject" onclick="rejectWithdrawal('${request.requestId || request.id}')">❌ Reject</button>
+                                    ` : request.status === 'approved' ? `
+                                        <button class="btn btn-unlock" onclick="markPaid('${request.requestId || request.id}')">💰 Mark Paid</button>
+                                    ` : 'No actions'}
+                                </td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                    } else {
+                        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #ccc;">No withdrawal requests found</td></tr>`;
+                    }
+                } else {
+                    alert("Failed to load withdrawals: " + (data.message || "Unknown error"));
+                }
+            } catch (error) {
+                console.error("Load withdrawals error:", error);
+                alert("Failed to load withdrawals.");
+                const tbody = document.getElementById('withdrawals-list');
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #ff6b6b;">Error loading withdrawals</td></tr>`;
+            }
+        }
+        
+        // Load eligible users (existing function - keep as is)
+        async function loadEligibleUsers() {
+            try {
+                const response = await fetch(API + "/api/admin/eligible-users", { headers: adminHeaders });
+                const data = await response.json();
+                
+                if (data.success) {
+                    const tbody = document.getElementById('unlock-list');
+                    tbody.innerHTML = '';
+                    
+                    data.users.forEach(user => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${user.username}</td>
+                            <td>₦${user.tier.toLocaleString()}</td>
+                            <td>₦${user.staked.toLocaleString()} / ₦${user.stakeTarget.toLocaleString()}</td>
+                            <td>₦${user.won.toLocaleString()} / ₦${user.winTarget.toLocaleString()}</td>
+                            <td>✅ YES</td>
+                            <td>${user.withdrawalUnlocked ? '🔓 Unlocked' : '🔒 Locked'}</td>
+                            <td>
+                                ${!user.withdrawalUnlocked ? 
+                                    `<button class="btn btn-approve" onclick="unlockUser('${user.id}')">🔓 Unlock</button>` :
+                                    `<button class="btn btn-reject" onclick="lockUser('${user.id}')">🔒 Lock</button>`
+                                }
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                }
+            } catch (error) {
+                console.error("Load eligible users error:", error);
+                alert("Failed to load eligible users");
+            }
+        }
+        
+        // Deposit actions (existing functions - keep as is)
         async function approveDeposit(requestId) {
             const notes = prompt("Approval notes (optional):");
             
@@ -474,7 +764,7 @@
             }
         }
         
-        // Withdrawal actions
+        // Withdrawal actions (existing functions - keep as is)
         async function approveWithdrawal(requestId) {
             if (!confirm("Approve this withdrawal and deduct amount from user's balance?")) return;
             
@@ -531,7 +821,6 @@
             }
         }
         
-        // Mark withdrawal as paid
         async function markPaid(requestId) {
             const paymentProof = prompt("Enter payment proof/receipt number:");
             if (!paymentProof) {
