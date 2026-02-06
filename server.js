@@ -1023,120 +1023,65 @@ app.get("/user/referral-info", authMiddleware, async (req, res) => {
 app.post("/api/admin/login", async (req, res) => {
   try {
     const { username, password } = req.body;
-    
-    // Quick validation
+
     if (!username || !password) {
-      return res.status(400).json({ success: false, message: "Username and password required" });
+      return res.status(400).json({
+        success: false,
+        message: "Username and password required"
+      });
     }
-    
-    const data = await db.read();
-    
-    // Find user - case insensitive
-    const user = data.users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    
-    if (!user) {
-      return res.status(400).json({ success: false, message: "Invalid username or password" });
+
+    await db.read();
+
+    const admin = db.data.users.find(
+      u =>
+        u.username.toLowerCase() === username.toLowerCase() &&
+        u.isAdmin === true
+    );
+
+    if (!admin) {
+      return res.status(403).json({
+        success: false,
+        message: "Admin account not found"
+      });
     }
-    
-    // Check if admin - with fallback
-    if (!user.isAdmin) {
-      // Special case: if username is admin/manager/support, auto-grant admin
-      const adminUsernames = ["admin", "manager", "support"];
-      if (adminUsernames.includes(username.toLowerCase())) {
-        // Update user to admin
-        const userIndex = data.users.findIndex(u => u.id === user.id);
-        data.users[userIndex].isAdmin = true;
-        data.users[userIndex].adminRole = username === "admin" ? "Main Admin" : 
-                                         username === "manager" ? "Manager" : "Support";
-        data.users[userIndex].referralCode = username.toUpperCase() + "REF001";
-        await db.write();
-      } else {
-        return res.status(403).json({ success: false, message: "Not an admin account" });
-      }
-    }
-    
-        // DIRECT PASSWORD CHECK - FIXED
-    let isMatch;
-    
-    // First try bcrypt compare
-    try {
-      isMatch = await bcrypt.compare(password, user.password);
-    } catch (bcryptError) {
-      console.error("❌ Bcrypt compare error:", bcryptError);
-      isMatch = false;
-    }
-    
-    // If bcrypt fails, debug and try emergency check
+
+    const isMatch = await bcrypt.compare(password, admin.password);
     if (!isMatch) {
-      console.log("🔍 Bcrypt comparison failed. Debug info:");
-      console.log("   Username:", username);
-      console.log("   Provided password:", password);
-      console.log("   Stored hash exists:", !!user.password);
-      console.log("   User ID:", user.id);
-      console.log("   Is admin:", user.isAdmin);
-      
-      // EMERGENCY FIX: If password matches known passwords, update hash
-      const knownPasswords = {
-        "admin": "admin123",
-        "manager": "manager123", 
-        "support": "support123"
-      };
-      
-      const lowerUsername = username.toLowerCase();
-      if (knownPasswords[lowerUsername] && password === knownPasswords[lowerUsername]) {
-        console.log("⚠️  Emergency password match - updating hash");
-        isMatch = true;
-        
-        // Re-hash the password properly
-        try {
-          const salt = await bcrypt.genSalt(10);
-          const hashedPassword = await bcrypt.hash(password, salt);
-          
-          // Update user with proper hash
-          const userIndex = data.users.findIndex(u => u.id === user.id);
-          if (userIndex !== -1) {
-            data.users[userIndex].password = hashedPassword;
-            await db.write();
-            console.log("✅ Password hash updated for", username);
-          }
-        } catch (hashError) {
-          console.error("❌ Error updating hash:", hashError);
-        }
-      }
+      return res.status(401).json({
+        success: false,
+        message: "Invalid username or password"
+      });
     }
-    
-    if (!isMatch) {
-      return res.status(400).json({ success: false, message: "Invalid username or password" });
-    }
-    
-    // Generate token
+
     const token = jwt.sign(
-      { 
-        id: user.id, 
-        username: user.username, 
-        isAdmin: true,
-        role: user.adminRole || "admin" 
+      {
+        id: admin.id,
+        username: admin.username,
+        role: admin.adminRole,
+        isAdmin: true
       },
       process.env.JWT_SECRET || "dev_secret_123",
       { expiresIn: "8h" }
     );
-    
-    res.json({ 
-      success: true, 
-      message: "Admin login successful", 
+
+    res.json({
+      success: true,
       token,
-      user: {
-        id: user.id,
-        username: user.username,
-        role: user.adminRole || "admin"
+      admin: {
+        username: admin.username,
+        role: admin.adminRole
       }
     });
-    
-  } catch (error) {
-    console.error("Admin login error:", error);
-    res.status(500).json({ success: false, message: "Server error" });
+  } catch (err) {
+    console.error("Admin login error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
   }
 });
+
 
 // Get all users (admin) - WITH REFERRAL FIELDS
 app.get("/api/admin/users", adminMiddleware, async (req, res) => {

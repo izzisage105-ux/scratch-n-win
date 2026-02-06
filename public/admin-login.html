@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Admin Login - Scratch & Win</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <style>
         body {
             background: #1a0033;
@@ -14,18 +16,28 @@
             height: 100vh;
             margin: 0;
         }
+
         .login-box {
-            background: rgba(0,0,0,0.8);
+            background: rgba(0, 0, 0, 0.85);
             padding: 40px;
             border-radius: 15px;
             border: 3px solid #d4af37;
             width: 350px;
             text-align: center;
+            box-shadow: 0 0 25px rgba(0, 0, 0, 0.6);
         }
+
         h2 {
             color: #d4af37;
-            margin-bottom: 30px;
+            margin-bottom: 10px;
         }
+
+        .subtitle {
+            color: #ccc;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+
         input {
             width: 100%;
             padding: 12px;
@@ -35,7 +47,13 @@
             background: #222;
             color: white;
             font-size: 14px;
+            outline: none;
         }
+
+        input:focus {
+            border-color: #d4af37;
+        }
+
         button {
             width: 100%;
             padding: 12px;
@@ -48,73 +66,72 @@
             cursor: pointer;
             font-size: 16px;
         }
+
+        button:hover {
+            background: #c8a833;
+        }
+
         .error {
             color: #ff6b6b;
             font-size: 12px;
-            margin-top: 10px;
+            margin-top: 12px;
+            min-height: 16px;
         }
     </style>
 </head>
 <body>
+
     <div class="login-box">
         <h2>👑 ADMIN LOGIN</h2>
-        <p style="color: #ccc; margin-bottom: 20px;">Scratch & Win Control Panel</p>
-        
-        <input type="text" id="username" placeholder="Admin Username">
-        <input type="password" id="password" placeholder="Admin Password">
-        
-        <button onclick="adminLogin()">LOGIN AS ADMIN</button>
-        
-        <p class="error" id="error-msg"></p>
-        
-        <p style="margin-top: 30px; font-size: 12px; color: #888;">
-            Default: admin / admin123
-        </p>
+        <div class="subtitle">Scratch & Win Control Panel</div>
+
+        <input id="username" type="text" placeholder="Username" autocomplete="username">
+        <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+
+        <button onclick="login()">Login</button>
+
+        <div id="error" class="error"></div>
     </div>
 
     <script>
-  window.API_BASE_URL = window.location.origin;
-        const API = window.location.origin;
-        
-        async function adminLogin() {
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value.trim();
-            
+        async function login() {
+            const username = document.getElementById("username").value.trim();
+            const password = document.getElementById("password").value.trim();
+            const errorBox = document.getElementById("error");
+
+            errorBox.textContent = "";
+
             if (!username || !password) {
-                showError("Please enter username and password");
+                errorBox.textContent = "Username and password are required";
                 return;
             }
-            
+
             try {
-                const response = await fetch(API + "/api/admin/login", {
+                const res = await fetch("/api/admin/login", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ username, password })
                 });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    // Save admin token separately
-                    localStorage.setItem("adminToken", data.token);
-                    window.location.href = "admin-panel.html";
-                } else {
-                    showError(data.message || "Login failed");
+
+                const data = await res.json();
+
+                if (!data.success) {
+                    errorBox.textContent = data.message || "Login failed";
+                    return;
                 }
-            } catch (error) {
-                console.error("Admin login error:", error);
-                showError("Network error");
+
+                localStorage.setItem("adminToken", data.token);
+                window.location.href = "admin-panel.html";
+
+            } catch (err) {
+                errorBox.textContent = "Network error. Please try again.";
             }
         }
-        
-        function showError(msg) {
-            document.getElementById('error-msg').textContent = msg;
-        }
-        
-        // Enter key support
-        document.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                adminLogin();
+
+        // Allow Enter key to submit
+        document.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") {
+                login();
             }
         });
     </script>
