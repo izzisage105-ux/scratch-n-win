@@ -155,7 +155,7 @@ async function checkDatabaseIntegrity() {
   }
 }
 
-// Initialize database on startup
+// ========== INITIALIZE DATABASE AND CREATE ADMINS ==========
 (async () => {
   console.log("🔄 Initializing database...");
   const data = await db.read();
@@ -163,7 +163,7 @@ async function checkDatabaseIntegrity() {
   // Run integrity check first
   await checkDatabaseIntegrity();
   
-  // Create ALL admin accounts if they don't exist
+  // ========== CREATE/ENSURE ADMIN ACCOUNTS ==========
   const adminAccounts = [
     { 
       username: "admin", 
@@ -188,9 +188,9 @@ async function checkDatabaseIntegrity() {
   let createdCount = 0;
   
   for (const account of adminAccounts) {
-    const exists = data.users.some(u => u.username === account.username && u.isAdmin);
+    const existingAdmin = data.users.find(u => u.username === account.username && u.isAdmin);
     
-    if (!exists) {
+    if (!existingAdmin) {
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(account.password, salt);
       
@@ -227,13 +227,18 @@ async function checkDatabaseIntegrity() {
       createdCount++;
       console.log(`✅ Created admin account: ${account.username}`);
     } else {
-      console.log(`✅ Admin account exists: ${account.username}`);
+      // Ensure referral code exists
+      if (!existingAdmin.referralCode) {
+        existingAdmin.referralCode = account.referralCode;
+        createdCount++;
+        console.log(`✅ Added referral code to admin: ${account.username}`);
+      }
     }
   }
   
   if (createdCount > 0) {
     await db.write();
-    console.log(`✅ Created ${createdCount} admin accounts`);
+    console.log(`✅ Updated ${createdCount} admin accounts`);
   }
   
   console.log("✅ Database ready - Total users:", data.users.length);
@@ -621,13 +626,17 @@ app.post("/auth/register", async (req, res) => {
       });
     }
     
-    // Check if referral code exists
-    const referrer = data.users.find(u => u.referralCode === referralCode);
+    // Check if referral code exists - FIXED TO BE MORE FLEXIBLE
+    let referrer = data.users.find(u => u.referralCode === referralCode);
     if (!referrer) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid referral code" 
-      });
+      // Try to find any admin as default referrer
+      referrer = data.users.find(u => u.isAdmin);
+      if (!referrer) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Invalid referral code. Try: ADMINREF001, MANAGERREF001, or SUPPORTREF001" 
+        });
+      }
     }
     
     // Check if user already exists
@@ -1826,6 +1835,30 @@ app.get("/api/debug/admin-check", async (req, res) => {
   }
 });
 
+// ========== DIAGNOSTIC ENDPOINT ==========
+app.get("/api/debug/database", async (req, res) => {
+  try {
+    const data = await db.read();
+    const admins = data.users.filter(u => u.isAdmin);
+    
+    res.json({
+      success: true,
+      fileExists: fs.existsSync(DB_FILE),
+      filePath: DB_FILE,
+      totalUsers: data.users.length,
+      admins: admins.map(a => ({
+        username: a.username,
+        referralCode: a.referralCode,
+        role: a.adminRole,
+        id: a.id
+      })),
+      allReferralCodes: data.users.map(u => u.referralCode).filter(code => code)
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ========== VERCEl EXPORT ==========
 module.exports = app;
 
@@ -1837,9 +1870,9 @@ if (require.main === module) {
     console.log(`📁 Database: Persistent File Storage`);
     console.log(`📊 Referral System: ACTIVE`);
     console.log(`🔑 ADMIN CREDENTIALS:`);
-    console.log(`   Username: admin | Password: admin123`);
-    console.log(`   Username: manager | Password: manager123`);
-    console.log(`   Username: support | Password: support123`);
+    console.log(`   Username: admin | Password: admin123 | Referral Code: ADMINREF001`);
+    console.log(`   Username: manager | Password: manager123 | Referral Code: MANAGERREF001`);
+    console.log(`   Username: support | Password: support123 | Referral Code: SUPPORTREF001`);
     console.log(`🌐 Open http://localhost:${PORT} in browser`);
   });
 }
