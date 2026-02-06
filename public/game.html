@@ -175,6 +175,89 @@
     </div>
 </div>
 
+<!-- Add this after the withdrawal-form div -->
+<div class="form-section" style="margin-top: 20px; background: rgba(139, 69, 19, 0.2);">
+    <h3 style="color:var(--gold); margin-top:0; text-align: center;">👥 REFER & EARN</h3>
+    
+    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+        <p style="font-size: 12px; color: #ccc; margin-bottom: 10px;">
+            Invite friends and earn commissions on their deposits!
+        </p>
+        
+        <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 6px; margin-bottom: 10px;">
+            <p style="font-size: 11px; color: #ffd700; margin: 0 0 5px 0;">
+                Your Referral Code:
+            </p>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <code id="referralCodeDisplay" style="
+                    background: black; 
+                    color: #00ff00; 
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                    font-family: monospace;
+                    font-size: 16px;
+                    letter-spacing: 1px;
+                    flex-grow: 1;
+                ">Loading...</code>
+                <button onclick="copyReferralCode()" style="
+                    background: var(--gold);
+                    color: black;
+                    border: none;
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-weight: bold;
+                    font-size: 12px;
+                ">Copy</button>
+            </div>
+        </div>
+        
+        <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 6px; margin-bottom: 10px;">
+            <p style="font-size: 11px; color: #ffd700; margin: 0 0 5px 0;">
+                Your Referral Link:
+            </p>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="text" id="referralLinkInput" readonly style="
+                    flex-grow: 1;
+                    padding: 8px;
+                    border: 1px solid var(--gold);
+                    border-radius: 4px;
+                    background: black;
+                    color: white;
+                    font-size: 12px;
+                ">
+                <button onclick="copyReferralLink()" style="
+                    background: var(--green);
+                    color: white;
+                    border: none;
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-weight: bold;
+                    font-size: 12px;
+                ">Copy</button>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+            <div style="background: rgba(0,135,81,0.1); padding: 10px; border-radius: 6px; text-align: center;">
+                <p style="font-size: 11px; color: #ccc; margin: 0 0 5px 0;">Total Referrals</p>
+                <p style="font-size: 20px; color: #00ff00; margin: 0; font-weight: bold;" id="totalReferrals">0</p>
+            </div>
+            <div style="background: rgba(212, 175, 55, 0.1); padding: 10px; border-radius: 6px; text-align: center;">
+                <p style="font-size: 11px; color: #ccc; margin: 0 0 5px 0;">Total Earnings</p>
+                <p style="font-size: 20px; color: var(--gold); margin: 0; font-weight: bold;" id="referralEarnings">₦0</p>
+            </div>
+        </div>
+        
+        <div style="margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.5); border-radius: 6px; border: 1px dashed var(--gold);">
+            <p style="font-size: 10px; color: #ccc; margin: 0; text-align: center;">
+                💰 <b>How it works:</b> Share your code. When friends join and deposit, you earn commission!
+            </p>
+        </div>
+    </div>
+</div>
+
 <div id="deposit-screen" class="screen">
     <div class="content-card" style="margin-top: 50px;">
         <h2 style="color:var(--green)">TOP UP WALLET</h2>
@@ -490,6 +573,247 @@ function createScratchBox(container, value, index, winningIndices) {
     
     container.appendChild(wrapper);
 }
+
+// Load referral info
+async function loadReferralInfo() {
+    try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(API + "/user/referral-info", {
+            headers: { 
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Update UI
+            document.getElementById('referralCodeDisplay').textContent = data.referralCode;
+            
+            // Create referral link
+            const referralLink = `${window.location.origin}/register.html?ref=${data.referralCode}`;
+            document.getElementById('referralLinkInput').value = referralLink;
+            
+            document.getElementById('totalReferrals').textContent = data.totalReferrals || 0;
+            document.getElementById('referralEarnings').textContent = `₦${(data.totalReferralDeposits || 0).toLocaleString()}`;
+            
+            console.log("✅ Referral info loaded:", data);
+        }
+    } catch (error) {
+        console.error("Load referral error:", error);
+        document.getElementById('referralCodeDisplay').textContent = "Error loading";
+    }
+}
+
+// Copy functions
+function copyReferralCode() {
+    const code = document.getElementById('referralCodeDisplay').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+        alert('✅ Referral code copied! Share with friends.');
+    }).catch(err => {
+        console.error('Copy failed:', err);
+        alert('Failed to copy');
+    });
+}
+
+function copyReferralLink() {
+    const link = document.getElementById('referralLinkInput').value;
+    navigator.clipboard.writeText(link).then(() => {
+        alert('✅ Referral link copied! Share with friends.');
+    }).catch(err => {
+        console.error('Copy failed:', err);
+        alert('Failed to copy');
+    });
+}
+
+// Function to show referral modal (if using button option)
+function showReferralSection() {
+    loadReferralInfo();
+    
+    // Create modal
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.95);
+        z-index: 2000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    `;
+    
+    modal.innerHTML = `
+        <div style="
+            background: linear-gradient(135deg, #1a0033, #330066);
+            border: 3px solid var(--gold);
+            border-radius: 20px;
+            padding: 25px;
+            width: 90%;
+            max-width: 400px;
+            color: white;
+            position: relative;
+        ">
+            <button onclick="this.parentElement.parentElement.remove()" style="
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                background: transparent;
+                border: none;
+                color: white;
+                font-size: 20px;
+                cursor: pointer;
+            ">×</button>
+            
+            <h2 style="color:var(--gold); text-align:center; margin-top:0;">👥 REFER & EARN</h2>
+            
+            <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 10px; margin-bottom: 15px;">
+                <p style="color: #ccc; font-size: 14px; text-align: center; margin-bottom: 15px;">
+                    Invite friends and earn commissions on their deposits!
+                </p>
+                
+                <div style="background: rgba(0,0,0,0.5); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <p style="color: #ffd700; font-size: 12px; margin: 0 0 5px 0;">Your Referral Code:</p>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <code id="modalRefCode" style="
+                            background: black; 
+                            color: #00ff00; 
+                            padding: 12px;
+                            border-radius: 6px;
+                            font-family: monospace;
+                            font-size: 18px;
+                            letter-spacing: 2px;
+                            flex-grow: 1;
+                            text-align: center;
+                        ">Loading...</code>
+                        <button onclick="copyModalCode()" style="
+                            background: var(--gold);
+                            color: black;
+                            border: none;
+                            padding: 12px 15px;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-weight: bold;
+                        ">Copy</button>
+                    </div>
+                </div>
+                
+                <div style="background: rgba(0,0,0,0.5); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <p style="color: #ffd700; font-size: 12px; margin: 0 0 5px 0;">Your Referral Link:</p>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="text" id="modalRefLink" readonly style="
+                            flex-grow: 1;
+                            padding: 12px;
+                            border: 1px solid var(--gold);
+                            border-radius: 6px;
+                            background: black;
+                            color: white;
+                            font-size: 12px;
+                        ">
+                        <button onclick="copyModalLink()" style="
+                            background: var(--green);
+                            color: white;
+                            border: none;
+                            padding: 12px 15px;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-weight: bold;
+                        ">Copy</button>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0;">
+                    <div style="background: rgba(0,135,81,0.2); padding: 15px; border-radius: 8px; text-align: center;">
+                        <p style="color: #ccc; font-size: 12px; margin: 0 0 8px 0;">Total Referrals</p>
+                        <p style="font-size: 28px; color: #00ff00; margin: 0; font-weight: bold;" id="modalTotalRefs">0</p>
+                    </div>
+                    <div style="background: rgba(212, 175, 55, 0.2); padding: 15px; border-radius: 8px; text-align: center;">
+                        <p style="color: #ccc; font-size: 12px; margin: 0 0 8px 0;">Total Earnings</p>
+                        <p style="font-size: 28px; color: var(--gold); margin: 0; font-weight: bold;" id="modalRefEarnings">₦0</p>
+                    </div>
+                </div>
+                
+                <div style="background: rgba(0,0,0,0.7); padding: 12px; border-radius: 8px; border: 1px dashed var(--gold);">
+                    <p style="color: #ccc; font-size: 11px; margin: 0; text-align: center; line-height: 1.4;">
+                        💰 <b>How to earn:</b><br>
+                        1. Share your code/link with friends<br>
+                        2. They register using your code<br>
+                        3. When they deposit, you earn commission!<br>
+                        4. Earnings visible in your wallet
+                    </p>
+                </div>
+            </div>
+            
+            <button onclick="this.parentElement.parentElement.remove()" style="
+                background: var(--green);
+                color: white;
+                border: none;
+                padding: 15px;
+                width: 100%;
+                border-radius: 10px;
+                font-weight: bold;
+                cursor: pointer;
+                margin-top: 10px;
+            ">Got it!</button>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Load data for modal
+    setTimeout(() => {
+        const token = localStorage.getItem("token");
+        fetch(API + "/user/referral-info", {
+            headers: { 
+                "Authorization": `Bearer ${token}`,
+                "Content-Type": "application/json"
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('modalRefCode').textContent = data.referralCode;
+                document.getElementById('modalRefLink').value = `${window.location.origin}/register.html?ref=${data.referralCode}`;
+                document.getElementById('modalTotalRefs').textContent = data.totalReferrals || 0;
+                document.getElementById('modalRefEarnings').textContent = `₦${(data.totalReferralDeposits || 0).toLocaleString()}`;
+            }
+        });
+    }, 100);
+}
+
+// Modal copy functions
+function copyModalCode() {
+    const code = document.getElementById('modalRefCode').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+        alert('✅ Referral code copied!');
+    });
+}
+
+function copyModalLink() {
+    const link = document.getElementById('modalRefLink').value;
+    navigator.clipboard.writeText(link).then(() => {
+        alert('✅ Referral link copied!');
+    });
+}
+
+// Add this to your window.onload function:
+window.onload = async () => {
+    await loadUser();
+    
+    // Check if user has real balance and set to real mode if they do
+    if (currentUser && currentUser.balance && currentUser.balance >= state.currentStake) {
+        setMode('real');
+    } else {
+        // Default to demo if no real balance
+        setMode('demo');
+    }
+    
+    // Load referral info
+    loadReferralInfo();
+};
 
 // Add win sound
 function playWinSound() {
