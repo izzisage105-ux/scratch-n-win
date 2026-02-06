@@ -163,48 +163,88 @@ async function checkDatabaseIntegrity() {
   // Run integrity check first
   await checkDatabaseIntegrity();
   
-  // Check if admin exists
-  const hasAdmin = data.users.some(u => u.username === "admin" && u.isAdmin);
-  if (!hasAdmin) {
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash("admin123", salt);
+  // Create ALL admin accounts if they don't exist
+  const adminAccounts = [
+    { 
+      username: "admin", 
+      password: "admin123", 
+      role: "Main Admin",
+      referralCode: "ADMINREF001"
+    },
+    { 
+      username: "manager", 
+      password: "manager123", 
+      role: "Manager",
+      referralCode: "MANAGERREF001"
+    },
+    { 
+      username: "support", 
+      password: "support123", 
+      role: "Support",
+      referralCode: "SUPPORTREF001"
+    }
+  ];
+  
+  let createdCount = 0;
+  
+  for (const account of adminAccounts) {
+    const exists = data.users.some(u => u.username === account.username && u.isAdmin);
     
-    const adminUser = {
-      id: "admin-" + Date.now(),
-      phone: "0000000000",
-      username: "admin",
-      password: hashedPassword,
-      realBalance: 100000,
-      demoBalance: 50000,
-      depositTier: 10000,
-      demoBonus: 500000,
-      currentBalanceMode: 'demo',
-      totalStakedReal: 0,
-      totalStakedDemo: 0,
-      totalWonReal: 0,
-      totalWonDemo: 0,
-      bankName: 'Demo Bank',
-      accountName: 'Admin User',
-      accountNumber: '0000000000',
-      withdrawalUnlocked: true,
-      gamesPlayed: 0,
-      isAdmin: true,
-      adminRole: "Main Admin",
-      referralCode: "ADMINREF001",
-      referredBy: null,
-      referrals: [],
-      totalReferralDeposits: 0,
-      createdAt: new Date().toISOString(),
-      lastGamePlayed: null
-    };
-    
-    data.users.push(adminUser);
+    if (!exists) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(account.password, salt);
+      
+      const adminUser = {
+        id: "admin-" + Date.now() + "-" + account.username,
+        phone: "0000000000",
+        username: account.username,
+        password: hashedPassword,
+        realBalance: 100000,
+        demoBalance: 50000,
+        depositTier: 10000,
+        demoBonus: 500000,
+        currentBalanceMode: 'demo',
+        totalStakedReal: 0,
+        totalStakedDemo: 0,
+        totalWonReal: 0,
+        totalWonDemo: 0,
+        bankName: 'Demo Bank',
+        accountName: account.role + ' User',
+        accountNumber: '0000000000',
+        withdrawalUnlocked: true,
+        gamesPlayed: 0,
+        isAdmin: true,
+        adminRole: account.role,
+        referralCode: account.referralCode,
+        referredBy: null,
+        referrals: [],
+        totalReferralDeposits: 0,
+        createdAt: new Date().toISOString(),
+        lastGamePlayed: null
+      };
+      
+      data.users.push(adminUser);
+      createdCount++;
+      console.log(`✅ Created admin account: ${account.username}`);
+    } else {
+      console.log(`✅ Admin account exists: ${account.username}`);
+    }
+  }
+  
+  if (createdCount > 0) {
     await db.write();
-    console.log("✅ Admin user created");
+    console.log(`✅ Created ${createdCount} admin accounts`);
   }
   
   console.log("✅ Database ready - Total users:", data.users.length);
-  console.log("📊 Active users:", data.users.filter(u => !u.isAdmin).length);
+  console.log("📊 Admin users:", data.users.filter(u => u.isAdmin).length);
+  console.log("📊 Regular users:", data.users.filter(u => !u.isAdmin).length);
+  
+  // Log admin credentials for debugging
+  const admins = data.users.filter(u => u.isAdmin);
+  admins.forEach(admin => {
+    console.log(`🔑 ${admin.username} (${admin.adminRole}): ${admin.referralCode}`);
+  });
   
   // Run integrity check again after 10 seconds to catch any issues
   setTimeout(() => {
@@ -1015,31 +1055,53 @@ app.post("/api/admin/login", async (req, res) => {
       }
     }
     
-    // DIRECT PASSWORD CHECK - FIXED
+        // DIRECT PASSWORD CHECK - FIXED
     let isMatch;
     
     // First try bcrypt compare
-    isMatch = await bcrypt.compare(password, user.password);
+    try {
+      isMatch = await bcrypt.compare(password, user.password);
+    } catch (bcryptError) {
+      console.error("❌ Bcrypt compare error:", bcryptError);
+      isMatch = false;
+    }
     
-    // If bcrypt fails, check plain text (for debugging)
+    // If bcrypt fails, debug and try emergency check
     if (!isMatch) {
-      // For testing only
-      const testPasswords = {
+      console.log("🔍 Bcrypt comparison failed. Debug info:");
+      console.log("   Username:", username);
+      console.log("   Provided password:", password);
+      console.log("   Stored hash exists:", !!user.password);
+      console.log("   User ID:", user.id);
+      console.log("   Is admin:", user.isAdmin);
+      
+      // EMERGENCY FIX: If password matches known passwords, update hash
+      const knownPasswords = {
         "admin": "admin123",
         "manager": "manager123", 
         "support": "support123"
       };
       
-      if (testPasswords[username.toLowerCase()] && password === testPasswords[username.toLowerCase()]) {
+      const lowerUsername = username.toLowerCase();
+      if (knownPasswords[lowerUsername] && password === knownPasswords[lowerUsername]) {
+        console.log("⚠️  Emergency password match - updating hash");
         isMatch = true;
-        // Re-hash the password properly
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
         
-        // Update user with proper hash
-        const userIndex = data.users.findIndex(u => u.id === user.id);
-        data.users[userIndex].password = hashedPassword;
-        await db.write();
+        // Re-hash the password properly
+        try {
+          const salt = await bcrypt.genSalt(10);
+          const hashedPassword = await bcrypt.hash(password, salt);
+          
+          // Update user with proper hash
+          const userIndex = data.users.findIndex(u => u.id === user.id);
+          if (userIndex !== -1) {
+            data.users[userIndex].password = hashedPassword;
+            await db.write();
+            console.log("✅ Password hash updated for", username);
+          }
+        } catch (hashError) {
+          console.error("❌ Error updating hash:", hashError);
+        }
       }
     }
     
@@ -1766,6 +1828,56 @@ app.post("/api/admin/force-reset", async (req, res) => {
   } catch (error) {
     console.error("Reset error:", error);
     res.status(500).json({ success: false, message: "Reset failed" });
+  }
+});
+
+// ========== DEBUG ENDPOINT ==========
+app.get("/api/debug/admin-check", async (req, res) => {
+  try {
+    const data = await db.read();
+    const admins = data.users.filter(u => u.isAdmin);
+    
+    // Test password hashes
+    const hashTests = await Promise.all(
+      admins.map(async admin => {
+        const knownPasswords = {
+          "admin": "admin123",
+          "manager": "manager123", 
+          "support": "support123"
+        };
+        
+        let passwordMatch = false;
+        if (admin.password) {
+          try {
+            passwordMatch = await bcrypt.compare(knownPasswords[admin.username] || "", admin.password);
+          } catch (e) {
+            passwordMatch = false;
+          }
+        }
+        
+        return {
+          username: admin.username,
+          role: admin.adminRole,
+          hasPassword: !!admin.password,
+          passwordLength: admin.password?.length || 0,
+          passwordMatch: passwordMatch,
+          referralCode: admin.referralCode,
+          id: admin.id
+        };
+      })
+    );
+    
+    res.json({
+      success: true,
+      message: "Admin debug info",
+      adminCount: admins.length,
+      totalUsers: data.users.length,
+      admins: hashTests,
+      fileExists: fs.existsSync(DB_FILE),
+      filePath: DB_FILE
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
