@@ -8,10 +8,8 @@ require("dotenv").config();
 
 const app = express();
 
-/// ========== PERSISTENT DATABASE SETUP ==========
-const DB_FILE = path.join(__dirname, "database.json");
-
-// Initialize or load database
+/// ========== IN-MEMORY DATABASE FOR VERCEL ==========
+// On Vercel, file system is ephemeral. Use memory storage.
 let memoryDb = {
   users: [],
   games: [],
@@ -22,148 +20,32 @@ let memoryDb = {
   referrals: []
 };
 
-// Database wrapper with persistence - CORRECTED VERSION
+// Simple database wrapper for Vercel
 const db = {
-  data: null,
-  lastReadTime: 0,
-  readInterval: 5000, // Cache for 5 seconds
+  data: {...memoryDb},
   
   async read() {
-    // If data is cached and recent, return cached data
-    if (this.data !== null && (Date.now() - this.lastReadTime) < this.readInterval) {
-      return this.data;
-    }
-    
-    try {
-      if (fs.existsSync(DB_FILE)) {
-        const fileContent = fs.readFileSync(DB_FILE, "utf8");
-        const parsedData = JSON.parse(fileContent);
-        
-        // Merge with defaults to ensure all fields exist
-        this.data = {
-          users: parsedData.users || [],
-          games: parsedData.games || [],
-          withdrawals: parsedData.withdrawals || [],
-          deposits: parsedData.deposits || [],
-          settings: parsedData.settings || {},
-          winCounters: parsedData.winCounters || {},
-          referrals: parsedData.referrals || []
-        };
-        console.log("📂 Loaded database from file - Users:", this.data.users.length);
-      } else {
-        this.data = {...memoryDb};
-        console.log("📂 Created new database file");
-      }
-      
-      this.lastReadTime = Date.now();
-    } catch (error) {
-      console.error("❌ Error loading database:", error);
-      this.data = {...memoryDb};
-      this.lastReadTime = Date.now();
-    }
+    // Always return current data
     return this.data;
   },
   
   async write() {
-    try {
-      if (this.data === null) {
-        await this.read();
-      }
-      
-      // Create backup of existing file
-      if (fs.existsSync(DB_FILE)) {
-        const backupFile = DB_FILE + '.backup-' + Date.now();
-        fs.copyFileSync(DB_FILE, backupFile);
-      }
-      
-      // Write with pretty formatting
-      fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), "utf8");
-      console.log("💾 Database saved to file - Users:", this.data.users.length);
-      
-      // Update last read time to force fresh read next time
-      this.lastReadTime = 0;
-      return true;
-    } catch (error) {
-      console.error("❌ Error saving database:", error);
-      return false;
-    }
+    // Nothing to save on Vercel (memory only)
+    console.log("💾 Database would be saved (but Vercel can't persist files)");
+    return true;
   },
   
-  // Force reload from file (use sparingly)
   async forceReload() {
-    this.data = null;
-    this.lastReadTime = 0;
-    return await this.read();
+    return this.data;
   }
 };
 
-// ========== DATABASE INTEGRITY CHECK ==========
-async function checkDatabaseIntegrity() {
-  console.log("🔄 Checking database integrity...");
-  try {
-    const data = await db.read();
-    
-    // Ensure all users have required fields
-    let fixedCount = 0;
-    data.users = data.users.map(user => {
-      const fixedUser = {
-        id: user.id || Date.now().toString() + Math.random().toString(36).substr(2, 9),
-        phone: user.phone || "",
-        username: user.username || "",
-        password: user.password || "",
-        realBalance: user.realBalance || 0,
-        demoBalance: user.demoBalance || 46800,
-        depositTier: user.depositTier || null,
-        demoBonus: user.demoBonus || 0,
-        currentBalanceMode: user.currentBalanceMode || 'demo',
-        totalStakedReal: user.totalStakedReal || 0,
-        totalStakedDemo: user.totalStakedDemo || 0,
-        totalWonReal: user.totalWonReal || 0,
-        totalWonDemo: user.totalWonDemo || 0,
-        bankName: user.bankName || "",
-        accountName: user.accountName || "",
-        accountNumber: user.accountNumber || "",
-        withdrawalUnlocked: user.withdrawalUnlocked || false,
-        gamesPlayed: user.gamesPlayed || 0,
-        isAdmin: user.isAdmin || false,
-        adminRole: user.adminRole || "",
-        referralCode: user.referralCode || ("REF" + Date.now().toString().slice(-6)),
-        referredBy: user.referredBy || null,
-        referrals: user.referrals || [],
-        totalReferralDeposits: user.totalReferralDeposits || 0,
-        createdAt: user.createdAt || new Date().toISOString(),
-        lastGamePlayed: user.lastGamePlayed || null
-      };
-      
-      if (JSON.stringify(user) !== JSON.stringify(fixedUser)) {
-        fixedCount++;
-      }
-      
-      return fixedUser;
-    });
-    
-    if (fixedCount > 0) {
-      console.log(`✅ Fixed ${fixedCount} user records`);
-      await db.write();
-    }
-    
-    console.log("✅ Database integrity check complete");
-    return true;
-  } catch (error) {
-    console.error("❌ Database integrity check failed:", error);
-    return false;
-  }
-}
-
-// ========== INITIALIZE DATABASE AND CREATE ADMINS ==========
+// ========== CREATE ADMIN ACCOUNTS ON STARTUP ==========
 (async () => {
-  console.log("🔄 Initializing database...");
-  const data = await db.read();
+  console.log("🚀 Initializing Scratch & Win Server on Vercel");
+  console.log("⚠️  WARNING: Using in-memory database (data resets on server restart)");
   
-  // Run integrity check first
-  await checkDatabaseIntegrity();
-  
-  // ========== CREATE/ENSURE ADMIN ACCOUNTS ==========
+  // Always create fresh admin accounts
   const adminAccounts = [
     { 
       username: "admin", 
@@ -185,12 +67,13 @@ async function checkDatabaseIntegrity() {
     }
   ];
   
-  let createdCount = 0;
+  console.log("🔄 Creating admin accounts...");
   
   for (const account of adminAccounts) {
-    const existingAdmin = data.users.find(u => u.username === account.username && u.isAdmin);
+    // Check if admin already exists
+    const exists = db.data.users.some(u => u.username === account.username && u.isAdmin);
     
-    if (!existingAdmin) {
+    if (!exists) {
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(account.password, salt);
       
@@ -223,38 +106,19 @@ async function checkDatabaseIntegrity() {
         lastGamePlayed: null
       };
       
-      data.users.push(adminUser);
-      createdCount++;
-      console.log(`✅ Created admin account: ${account.username}`);
+      db.data.users.push(adminUser);
+      console.log(`✅ Created admin: ${account.username} (${account.referralCode})`);
     } else {
-      // Ensure referral code exists
-      if (!existingAdmin.referralCode) {
-        existingAdmin.referralCode = account.referralCode;
-        createdCount++;
-        console.log(`✅ Added referral code to admin: ${account.username}`);
-      }
+      console.log(`✅ Admin exists: ${account.username}`);
     }
   }
   
-  if (createdCount > 0) {
-    await db.write();
-    console.log(`✅ Updated ${createdCount} admin accounts`);
-  }
-  
-  console.log("✅ Database ready - Total users:", data.users.length);
-  console.log("📊 Admin users:", data.users.filter(u => u.isAdmin).length);
-  console.log("📊 Regular users:", data.users.filter(u => !u.isAdmin).length);
-  
-  // Log admin credentials for debugging
-  const admins = data.users.filter(u => u.isAdmin);
-  admins.forEach(admin => {
-    console.log(`🔑 ${admin.username} (${admin.adminRole}): ${admin.referralCode}`);
-  });
-  
-  // Run integrity check again after 10 seconds to catch any issues
-  setTimeout(() => {
-    checkDatabaseIntegrity();
-  }, 10000);
+  console.log("✅ Server ready!");
+  console.log("🔑 ADMIN CREDENTIALS:");
+  console.log("   Username: admin | Password: admin123 | Code: ADMINREF001");
+  console.log("   Username: manager | Password: manager123 | Code: MANAGERREF001");
+  console.log("   Username: support | Password: support123 | Code: SUPPORTREF001");
+  console.log("📊 Total users:", db.data.users.length);
 })();
 
 // ========== MIDDLEWARE ==========
@@ -305,9 +169,9 @@ app.get("/", (req, res) => {
     <head><title>Scratch & Win</title></head>
     <body>
       <h1>Game Loading...</h1>
-      <p>Looking in: ${publicPath}</p>
-      <p>Files found: ${fs.existsSync(publicPath) ? fs.readdirSync(publicPath).join(', ') : 'No public folder'}</p>
-      <a href="/api/status">API Status</a>
+      <p>Server is running on Vercel</p>
+      <p>Admin accounts are automatically created on startup</p>
+      <a href="/api/debug/database">Check Database Status</a>
     </body>
     </html>
   `);
@@ -327,24 +191,18 @@ app.get("/*.html", (req, res) => {
 app.get("/api/status", async (req, res) => {
   try {
     const data = await db.read();
-    const hasPublic = fs.existsSync(publicPath);
-    const publicFiles = hasPublic ? fs.readdirSync(publicPath) : [];
-    const rootFiles = fs.readdirSync(__dirname);
     
     res.json({ 
       success: true, 
       message: "Scratch & Win API", 
-      database: "Persistent File Storage",
-      databaseFile: DB_FILE,
+      database: "In-Memory Storage (Vercel)",
+      storageWarning: "Data resets on server restart. For production, use MongoDB Atlas or Supabase.",
       usersCount: data.users.length,
       gamesCount: data.games.length,
-      publicFolder: hasPublic,
-      publicFiles: publicFiles.filter(f => f.endsWith('.html')),
-      rootFiles: rootFiles.filter(f => f.endsWith('.html')),
-      paths: {
-        publicPath: publicPath,
-        rootPath: __dirname
-      }
+      admins: data.users.filter(u => u.isAdmin).map(a => ({
+        username: a.username,
+        referralCode: a.referralCode
+      }))
     });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error getting status" });
@@ -356,8 +214,9 @@ app.get("/api", (req, res) => {
   res.json({ 
     success: true, 
     message: "Scratch & Win API", 
-    database: "Persistent File Storage",
-    databasePath: DB_FILE
+    database: "In-Memory Storage",
+    warning: "Data is not persistent on Vercel",
+    adminReferralCodes: ["ADMINREF001", "MANAGERREF001", "SUPPORTREF001"]
   });
 });
 
@@ -370,9 +229,10 @@ app.get('/health', async (req, res) => {
       timestamp: new Date().toISOString(),
       service: 'scratch-win-game',
       version: '1.0.0',
-      storage: 'persistent-file',
+      storage: 'in-memory-vercel',
       users: data.users.length,
-      games: data.games.length
+      games: data.games.length,
+      warning: 'Data resets on server restart'
     });
   } catch (error) {
     res.status(500).json({ status: 'unhealthy', error: error.message });
@@ -596,7 +456,7 @@ const adminMiddleware = async (req, res, next) => {
 
 // ========== API ROUTES ==========
 
-// REGISTER WITH REFERRAL SYSTEM - ONLY THIS ONE SHOULD EXIST
+// REGISTER WITH REFERRAL SYSTEM
 app.post("/auth/register", async (req, res) => {
   try {
     const data = await db.read();
@@ -626,7 +486,7 @@ app.post("/auth/register", async (req, res) => {
       });
     }
     
-    // Check if referral code exists - FIXED TO BE MORE FLEXIBLE
+    // Check if referral code exists
     let referrer = data.users.find(u => u.referralCode === referralCode);
     if (!referrer) {
       // Try to find any admin as default referrer
@@ -714,6 +574,7 @@ app.post("/auth/register", async (req, res) => {
       totalDeposited: 0
     });
     
+    // Save (in memory)
     await db.write();
     
     const token = jwt.sign({ id: user.id, username }, process.env.JWT_SECRET || "dev_secret_123", { expiresIn: "30d" });
@@ -1714,127 +1575,6 @@ app.get("/user/deposit-history", authMiddleware, async (req, res) => {
   }
 });
 
-// ========== EMERGENCY ADMIN RESET ==========
-app.post("/api/admin/force-reset", async (req, res) => {
-  try {
-    const data = await db.read();
-    
-    // Clear all existing users except non-admins
-    const nonAdmins = data.users.filter(u => !u.isAdmin);
-    data.users = nonAdmins;
-    
-    // Create fresh admin accounts with CORRECT passwords
-    const adminAccounts = [
-      { username: "admin", password: "admin123", role: "Main Admin" },
-      { username: "manager", password: "manager123", role: "Manager" },
-      { username: "support", password: "support123", role: "Support" }
-    ];
-    
-    for (const acc of adminAccounts) {
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(acc.password, salt);
-      
-      const adminUser = {
-        id: `admin-${Date.now()}-${acc.username}`,
-        phone: "0000000000",
-        username: acc.username,
-        password: hashedPassword,
-        realBalance: 100000,
-        demoBalance: 50000,
-        depositTier: 10000,
-        demoBonus: 500000,
-        currentBalanceMode: 'demo',
-        totalStakedReal: 0,
-        totalStakedDemo: 0,
-        totalWonReal: 0,
-        totalWonDemo: 0,
-        bankName: 'Demo Bank',
-        accountName: 'Admin User',
-        accountNumber: '0000000000',
-        withdrawalUnlocked: true,
-        gamesPlayed: 0,
-        isAdmin: true,
-        adminRole: acc.role,
-        referralCode: acc.username.toUpperCase() + "REF001",
-        referredBy: null,
-        referrals: [],
-        totalReferralDeposits: 0,
-        createdAt: new Date().toISOString(),
-        lastGamePlayed: null
-      };
-      
-      data.users.push(adminUser);
-    }
-    
-    await db.write();
-    
-    res.json({
-      success: true,
-      message: "Admin accounts reset successfully!",
-      accounts: adminAccounts.map(acc => ({
-        username: acc.username,
-        password: acc.password,
-        role: acc.role,
-        referralCode: acc.username.toUpperCase() + "REF001"
-      }))
-    });
-    
-  } catch (error) {
-    console.error("Reset error:", error);
-    res.status(500).json({ success: false, message: "Reset failed" });
-  }
-});
-
-// ========== DEBUG ENDPOINT ==========
-app.get("/api/debug/admin-check", async (req, res) => {
-  try {
-    const data = await db.read();
-    const admins = data.users.filter(u => u.isAdmin);
-    
-    // Test password hashes
-    const hashTests = await Promise.all(
-      admins.map(async admin => {
-        const knownPasswords = {
-          "admin": "admin123",
-          "manager": "manager123", 
-          "support": "support123"
-        };
-        
-        let passwordMatch = false;
-        if (admin.password) {
-          try {
-            passwordMatch = await bcrypt.compare(knownPasswords[admin.username] || "", admin.password);
-          } catch (e) {
-            passwordMatch = false;
-          }
-        }
-        
-        return {
-          username: admin.username,
-          role: admin.adminRole,
-          hasPassword: !!admin.password,
-          passwordLength: admin.password?.length || 0,
-          passwordMatch: passwordMatch,
-          referralCode: admin.referralCode,
-          id: admin.id
-        };
-      })
-    );
-    
-    res.json({
-      success: true,
-      message: "Admin debug info",
-      adminCount: admins.length,
-      totalUsers: data.users.length,
-      admins: hashTests,
-      fileExists: fs.existsSync(DB_FILE),
-      filePath: DB_FILE
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
 // ========== DIAGNOSTIC ENDPOINT ==========
 app.get("/api/debug/database", async (req, res) => {
   try {
@@ -1843,8 +1583,8 @@ app.get("/api/debug/database", async (req, res) => {
     
     res.json({
       success: true,
-      fileExists: fs.existsSync(DB_FILE),
-      filePath: DB_FILE,
+      environment: "Vercel Serverless",
+      storageType: "In-Memory (data resets on restart)",
       totalUsers: data.users.length,
       admins: admins.map(a => ({
         username: a.username,
@@ -1852,7 +1592,9 @@ app.get("/api/debug/database", async (req, res) => {
         role: a.adminRole,
         id: a.id
       })),
-      allReferralCodes: data.users.map(u => u.referralCode).filter(code => code)
+      allReferralCodes: data.users.map(u => u.referralCode).filter(code => code),
+      availableReferralCodes: ["ADMINREF001", "MANAGERREF001", "SUPPORTREF001"],
+      message: "For persistent storage, add MongoDB Atlas or Supabase database."
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -1867,8 +1609,8 @@ if (require.main === module) {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📁 Database: Persistent File Storage`);
-    console.log(`📊 Referral System: ACTIVE`);
+    console.log(`📁 Database: In-Memory Storage`);
+    console.log(`⚠️  WARNING: Data resets on server restart`);
     console.log(`🔑 ADMIN CREDENTIALS:`);
     console.log(`   Username: admin | Password: admin123 | Referral Code: ADMINREF001`);
     console.log(`   Username: manager | Password: manager123 | Referral Code: MANAGERREF001`);
