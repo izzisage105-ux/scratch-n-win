@@ -682,7 +682,12 @@ app.get("/user/me", authMiddleware, async (req, res) => {
         currentBalanceMode: user.currentBalanceMode || 'demo',
         totalStakedReal: user.totalStakedReal || 0,
         totalStakedDemo: user.totalStakedDemo || 0,
-        referralCode: user.referralCode || "N/A"
+        referralCode: user.referralCode || "N/A", // ✅ ADDED: Referral code
+        bankName: user.bankName || "", // ✅ ADDED: For bank check
+        accountName: user.accountName || "", // ✅ ADDED
+        accountNumber: user.accountNumber || "", // ✅ ADDED
+        withdrawalUnlocked: user.withdrawalUnlocked || false, // ✅ ADDED
+        gamesPlayed: user.gamesPlayed || 0 // ✅ ADDED
       }
     });
   } catch (error) {
