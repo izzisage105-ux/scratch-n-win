@@ -22,13 +22,15 @@ let memoryDb = {
   referrals: []
 };
 
-// Database wrapper with persistence - FIXED VERSION
+// Database wrapper with persistence - CORRECTED VERSION
 const db = {
   data: null,
+  lastReadTime: 0,
+  readInterval: 5000, // Cache for 5 seconds
   
   async read() {
-    // FIX: Don't reset data on every read
-    if (this.data !== null) {
+    // If data is cached and recent, return cached data
+    if (this.data !== null && (Date.now() - this.lastReadTime) < this.readInterval) {
       return this.data;
     }
     
@@ -37,6 +39,7 @@ const db = {
         const fileContent = fs.readFileSync(DB_FILE, "utf8");
         const parsedData = JSON.parse(fileContent);
         
+        // Merge with defaults to ensure all fields exist
         this.data = {
           users: parsedData.users || [],
           games: parsedData.games || [],
@@ -46,14 +49,17 @@ const db = {
           winCounters: parsedData.winCounters || {},
           referrals: parsedData.referrals || []
         };
-        console.log("📂 Loaded database from file");
+        console.log("📂 Loaded database from file - Users:", this.data.users.length);
       } else {
         this.data = {...memoryDb};
         console.log("📂 Created new database file");
       }
+      
+      this.lastReadTime = Date.now();
     } catch (error) {
       console.error("❌ Error loading database:", error);
       this.data = {...memoryDb};
+      this.lastReadTime = Date.now();
     }
     return this.data;
   },
@@ -63,33 +69,107 @@ const db = {
       if (this.data === null) {
         await this.read();
       }
+      
+      // Create backup of existing file
+      if (fs.existsSync(DB_FILE)) {
+        const backupFile = DB_FILE + '.backup-' + Date.now();
+        fs.copyFileSync(DB_FILE, backupFile);
+      }
+      
+      // Write with pretty formatting
       fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), "utf8");
-      console.log("💾 Database saved to file");
+      console.log("💾 Database saved to file - Users:", this.data.users.length);
+      
+      // Update last read time to force fresh read next time
+      this.lastReadTime = 0;
       return true;
     } catch (error) {
       console.error("❌ Error saving database:", error);
       return false;
     }
+  },
+  
+  // Force reload from file (use sparingly)
+  async forceReload() {
+    this.data = null;
+    this.lastReadTime = 0;
+    return await this.read();
   }
 };
 
-// REMOVED THE BUGGY CODE - DON'T FORCE RELOAD ON EVERY READ
-// const originalRead = db.read;
-// db.read = async function() {
-//   this.data = null; // <-- THIS WAS THE PROBLEM!
-//   return await originalRead.call(this);
-// };
+// ========== DATABASE INTEGRITY CHECK ==========
+async function checkDatabaseIntegrity() {
+  console.log("🔄 Checking database integrity...");
+  try {
+    const data = await db.read();
+    
+    // Ensure all users have required fields
+    let fixedCount = 0;
+    data.users = data.users.map(user => {
+      const fixedUser = {
+        id: user.id || Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        phone: user.phone || "",
+        username: user.username || "",
+        password: user.password || "",
+        realBalance: user.realBalance || 0,
+        demoBalance: user.demoBalance || 46800,
+        depositTier: user.depositTier || null,
+        demoBonus: user.demoBonus || 0,
+        currentBalanceMode: user.currentBalanceMode || 'demo',
+        totalStakedReal: user.totalStakedReal || 0,
+        totalStakedDemo: user.totalStakedDemo || 0,
+        totalWonReal: user.totalWonReal || 0,
+        totalWonDemo: user.totalWonDemo || 0,
+        bankName: user.bankName || "",
+        accountName: user.accountName || "",
+        accountNumber: user.accountNumber || "",
+        withdrawalUnlocked: user.withdrawalUnlocked || false,
+        gamesPlayed: user.gamesPlayed || 0,
+        isAdmin: user.isAdmin || false,
+        adminRole: user.adminRole || "",
+        referralCode: user.referralCode || ("REF" + Date.now().toString().slice(-6)),
+        referredBy: user.referredBy || null,
+        referrals: user.referrals || [],
+        totalReferralDeposits: user.totalReferralDeposits || 0,
+        createdAt: user.createdAt || new Date().toISOString(),
+        lastGamePlayed: user.lastGamePlayed || null
+      };
+      
+      if (JSON.stringify(user) !== JSON.stringify(fixedUser)) {
+        fixedCount++;
+      }
+      
+      return fixedUser;
+    });
+    
+    if (fixedCount > 0) {
+      console.log(`✅ Fixed ${fixedCount} user records`);
+      await db.write();
+    }
+    
+    console.log("✅ Database integrity check complete");
+    return true;
+  } catch (error) {
+    console.error("❌ Database integrity check failed:", error);
+    return false;
+  }
+}
 
-// Initialize with demo admin on startup
+// Initialize database on startup
 (async () => {
   console.log("🔄 Initializing database...");
   const data = await db.read();
-  const hasAdmin = data.users.some(u => u.username === "admin");
+  
+  // Run integrity check first
+  await checkDatabaseIntegrity();
+  
+  // Check if admin exists
+  const hasAdmin = data.users.some(u => u.username === "admin" && u.isAdmin);
   if (!hasAdmin) {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash("admin123", salt);
     
-    data.users.push({
+    const adminUser = {
       id: "admin-" + Date.now(),
       phone: "0000000000",
       username: "admin",
@@ -114,13 +194,22 @@ const db = {
       referredBy: null,
       referrals: [],
       totalReferralDeposits: 0,
-      createdAt: new Date().toISOString()
-    });
+      createdAt: new Date().toISOString(),
+      lastGamePlayed: null
+    };
     
+    data.users.push(adminUser);
     await db.write();
     console.log("✅ Admin user created");
   }
-  console.log("✅ Database ready");
+  
+  console.log("✅ Database ready - Total users:", data.users.length);
+  console.log("📊 Active users:", data.users.filter(u => !u.isAdmin).length);
+  
+  // Run integrity check again after 10 seconds to catch any issues
+  setTimeout(() => {
+    checkDatabaseIntegrity();
+  }, 10000);
 })();
 
 // ========== MIDDLEWARE ==========
