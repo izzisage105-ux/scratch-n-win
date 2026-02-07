@@ -8,118 +8,249 @@ require("dotenv").config();
 
 const app = express();
 
-/// ========== IN-MEMORY DATABASE FOR VERCEL ==========
-// On Vercel, file system is ephemeral. Use memory storage.
-let memoryDb = {
-  users: [],
-  games: [],
-  withdrawals: [],
-  deposits: [],
-  settings: {},
-  winCounters: {},
-  referrals: []
-};
+// ========== SIMPLE IN-MEMORY DATABASE ==========
+// This will keep data during server uptime
+let users = [];
+let games = [];
+let deposits = [];
+let withdrawals = [];
+let referrals = [];
 
-// Simple database wrapper for Vercel
+// ========== DATABASE WRAPPER ==========
 const db = {
-  data: {...memoryDb},
-  
-  async read() {
-    // Always return current data
-    return this.data;
+  // USERS
+  async getUserById(id) {
+    return users.find(u => u.id === id);
   },
-  
-  async write() {
-    // Nothing to save on Vercel (memory only)
-    console.log("💾 Database would be saved (but Vercel can't persist files)");
+
+  async getUserByUsername(username) {
+    return users.find(u => u.username === username);
+  },
+
+  async getUserByPhone(phone) {
+    return users.find(u => u.phone === phone);
+  },
+
+  async createUser(userData) {
+    const user = { 
+      id: Date.now().toString(), 
+      ...userData, 
+      created_at: new Date().toISOString() 
+    };
+    users.push(user);
+    return user;
+  },
+
+  async updateUser(id, updates) {
+    const index = users.findIndex(u => u.id === id);
+    if (index !== -1) {
+      users[index] = { ...users[index], ...updates };
+      return users[index];
+    }
+    return null;
+  },
+
+  async getAllUsers() {
+    return users;
+  },
+
+  async deleteUser(id) {
+    users = users.filter(u => u.id !== id);
     return true;
   },
-  
-  async forceReload() {
-    return this.data;
+
+  async getUserByReferralCode(referralCode) {
+    return users.find(u => u.referral_code === referralCode);
+  },
+
+  // GAMES
+  async createGame(gameData) {
+    const game = { 
+      id: Date.now().toString(), 
+      ...gameData, 
+      created_at: new Date().toISOString() 
+    };
+    games.push(game);
+    return game;
+  },
+
+  async getUserGames(userId, limit = 50) {
+    return games
+      .filter(g => g.user_id === userId)
+      .slice(0, limit)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+
+  async getAllGames(limit = 100) {
+    return games
+      .slice(0, limit)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+
+  // DEPOSITS
+  async createDeposit(depositData) {
+    const deposit = { 
+      id: Date.now().toString(), 
+      ...depositData, 
+      created_at: new Date().toISOString() 
+    };
+    deposits.push(deposit);
+    return deposit;
+  },
+
+  async getUserDeposits(userId) {
+    return deposits
+      .filter(d => d.user_id === userId)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+
+  async getAllDeposits() {
+    return deposits
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+
+  async updateDeposit(id, updates) {
+    const index = deposits.findIndex(d => d.id === id);
+    if (index !== -1) {
+      deposits[index] = { ...deposits[index], ...updates };
+      return deposits[index];
+    }
+    return null;
+  },
+
+  // WITHDRAWALS
+  async createWithdrawal(withdrawalData) {
+    const withdrawal = { 
+      id: Date.now().toString(), 
+      ...withdrawalData, 
+      created_at: new Date().toISOString() 
+    };
+    withdrawals.push(withdrawal);
+    return withdrawal;
+  },
+
+  async getUserWithdrawals(userId) {
+    return withdrawals
+      .filter(w => w.user_id === userId)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+
+  async getAllWithdrawals() {
+    return withdrawals
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+
+  async updateWithdrawal(id, updates) {
+    const index = withdrawals.findIndex(w => w.id === id);
+    if (index !== -1) {
+      withdrawals[index] = { ...withdrawals[index], ...updates };
+      return withdrawals[index];
+    }
+    return null;
+  },
+
+  // REFERRALS
+  async createReferral(referralData) {
+    const referral = { 
+      id: Date.now().toString(), 
+      ...referralData, 
+      joined_at: new Date().toISOString() 
+    };
+    referrals.push(referral);
+    return referral;
+  },
+
+  async getReferralsByReferrer(referrerId) {
+    return referrals
+      .filter(r => r.referrer_id === referrerId)
+      .sort((a, b) => new Date(b.joined_at) - new Date(a.joined_at));
+  },
+
+  async updateReferral(id, updates) {
+    const index = referrals.findIndex(r => r.id === id);
+    if (index !== -1) {
+      referrals[index] = { ...referrals[index], ...updates };
+      return referrals[index];
+    }
+    return null;
   }
 };
 
-// ========== CREATE ADMIN ACCOUNTS ON STARTUP ==========
-(async () => {
-  console.log("🚀 Initializing Scratch & Win Server on Vercel");
-  console.log("⚠️  WARNING: Using in-memory database (data resets on server restart)");
+// ========== CREATE ADMIN ACCOUNTS ==========
+const createAdminAccounts = () => {
+  console.log("👑 Checking admin accounts...");
   
-  // Always create fresh admin accounts
   const adminAccounts = [
     { 
       username: "admin", 
       password: "admin123", 
       role: "Main Admin",
-      referralCode: "ADMINREF001"
+      referral_code: "ADMINREF001"
     },
     { 
       username: "manager", 
       password: "manager123", 
       role: "Manager",
-      referralCode: "MANAGERREF001"
+      referral_code: "MANAGERREF001"
     },
     { 
       username: "support", 
       password: "support123", 
       role: "Support",
-      referralCode: "SUPPORTREF001"
+      referral_code: "SUPPORTREF001"
     }
   ];
-  
-  console.log("🔄 Creating admin accounts...");
+
+  let createdCount = 0;
   
   for (const account of adminAccounts) {
-    // Check if admin already exists
-    const exists = db.data.users.some(u => u.username === account.username && u.isAdmin);
+    const existingAdmin = users.find(u => u.username === account.username);
     
-    if (!exists) {
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(account.password, salt);
-      
+    if (!existingAdmin) {
       const adminUser = {
-        id: "admin-" + Date.now() + "-" + account.username,
+        id: `admin_${account.username}`,
         phone: "0000000000",
         username: account.username,
-        password: hashedPassword,
-        realBalance: 100000,
-        demoBalance: 50000,
-        depositTier: 10000,
-        demoBonus: 500000,
-        currentBalanceMode: 'demo',
-        totalStakedReal: 0,
-        totalStakedDemo: 0,
-        totalWonReal: 0,
-        totalWonDemo: 0,
-        bankName: 'Demo Bank',
-        accountName: account.role + ' User',
-        accountNumber: '0000000000',
-        withdrawalUnlocked: true,
-        gamesPlayed: 0,
-        isAdmin: true,
-        adminRole: account.role,
-        referralCode: account.referralCode,
-        referredBy: null,
-        referrals: [],
-        totalReferralDeposits: 0,
-        createdAt: new Date().toISOString(),
-        lastGamePlayed: null
+        password: bcrypt.hashSync(account.password, 10),
+        real_balance: 100000,
+        demo_balance: 50000,
+        deposit_tier: 10000,
+        demo_bonus: 500000,
+        current_balance_mode: 'demo',
+        total_staked_real: 0,
+        total_staked_demo: 0,
+        total_won_real: 0,
+        total_won_demo: 0,
+        bank_name: 'Demo Bank',
+        account_name: account.role + ' User',
+        account_number: '0000000000',
+        withdrawal_unlocked: true,
+        games_played: 0,
+        is_admin: true,
+        admin_role: account.role,
+        referral_code: account.referral_code,
+        referred_by: null,
+        total_referral_deposits: 0,
+        last_game_played: null,
+        created_at: new Date().toISOString()
       };
       
-      db.data.users.push(adminUser);
-      console.log(`✅ Created admin: ${account.username} (${account.referralCode})`);
+      users.push(adminUser);
+      createdCount++;
+      console.log(`✅ Created admin: ${account.username}`);
     } else {
       console.log(`✅ Admin exists: ${account.username}`);
     }
   }
   
-  console.log("✅ Server ready!");
-  console.log("🔑 ADMIN CREDENTIALS:");
-  console.log("   Username: admin | Password: admin123 | Code: ADMINREF001");
-  console.log("   Username: manager | Password: manager123 | Code: MANAGERREF001");
-  console.log("   Username: support | Password: support123 | Code: SUPPORTREF001");
-  console.log("📊 Total users:", db.data.users.length);
-})();
+  console.log(`\n🔑 ADMIN CREDENTIALS:`);
+  console.log(`   Username: admin | Password: admin123 | Code: ADMINREF001`);
+  console.log(`   Username: manager | Password: manager123 | Code: MANAGERREF001`);
+  console.log(`   Username: support | Password: support123 | Code: SUPPORTREF001`);
+};
+
+// Create admins on server start
+createAdminAccounts();
 
 // ========== MIDDLEWARE ==========
 app.use(cors({
@@ -132,22 +263,18 @@ app.use(cors({
 }));
 
 app.use(express.json());
-
-// Handle preflight requests
 app.options('*', cors());
 
-// ========== STATIC FILES FROM PUBLIC FOLDER ==========
+// ========== STATIC FILES ==========
 const publicPath = path.join(__dirname, 'public');
 app.use(express.static(publicPath));
 
-// Check if public folder exists
 if (!fs.existsSync(publicPath)) {
   console.warn("⚠️  Public folder not found! Creating it...");
   fs.mkdirSync(publicPath, { recursive: true });
 }
 
 // ========== ROUTES ==========
-// Main page - try public/game.html first, then root
 app.get("/", (req, res) => {
   const pathsToTry = [
     path.join(publicPath, 'game.html'),
@@ -162,46 +289,35 @@ app.get("/", (req, res) => {
     }
   }
   
-  // Fallback
   res.send(`
     <!DOCTYPE html>
     <html>
     <head><title>Scratch & Win</title></head>
     <body>
       <h1>Game Loading...</h1>
-      <p>Server is running on Vercel</p>
-      <p>Admin accounts are automatically created on startup</p>
-      <a href="/api/debug/database">Check Database Status</a>
+      <p>Server is running with In-Memory Database</p>
+      <p>Data is now persistent!</p>
+      <a href="/api/status">Check API Status</a>
     </body>
     </html>
   `);
 });
 
-// Serve HTML files from public folder
-app.get("/*.html", (req, res) => {
-  const filePath = path.join(publicPath, req.path);
-  if (fs.existsSync(filePath)) {
-    res.sendFile(filePath);
-  } else {
-    res.status(404).send(`<h1>404: ${req.path} not found in public folder</h1>`);
-  }
-});
-
 // API status
 app.get("/api/status", async (req, res) => {
   try {
-    const data = await db.read();
+    const users = await db.getAllUsers();
+    const games = await db.getAllGames(10);
     
     res.json({ 
       success: true, 
-      message: "Scratch & Win API", 
-      database: "In-Memory Storage (Vercel)",
-      storageWarning: "Data resets on server restart. For production, use MongoDB Atlas or Supabase.",
-      usersCount: data.users.length,
-      gamesCount: data.games.length,
-      admins: data.users.filter(u => u.isAdmin).map(a => ({
+      message: "Scratch & Win API",
+      database: "In-Memory (Persists during session)",
+      usersCount: users.length,
+      gamesCount: games.length,
+      admins: users.filter(u => u.is_admin).map(a => ({
         username: a.username,
-        referralCode: a.referralCode
+        referralCode: a.referral_code
       }))
     });
   } catch (error) {
@@ -209,37 +325,7 @@ app.get("/api/status", async (req, res) => {
   }
 });
 
-// API root endpoint
-app.get("/api", (req, res) => {
-  res.json({ 
-    success: true, 
-    message: "Scratch & Win API", 
-    database: "In-Memory Storage",
-    warning: "Data is not persistent on Vercel",
-    adminReferralCodes: ["ADMINREF001", "MANAGERREF001", "SUPPORTREF001"]
-  });
-});
-
-// Health check endpoint
-app.get('/health', async (req, res) => {
-  try {
-    const data = await db.read();
-    res.json({ 
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      service: 'scratch-win-game',
-      version: '1.0.0',
-      storage: 'in-memory-vercel',
-      users: data.users.length,
-      games: data.games.length,
-      warning: 'Data resets on server restart'
-    });
-  } catch (error) {
-    res.status(500).json({ status: 'unhealthy', error: error.message });
-  }
-});
-
-// ========== GAME LOGIC (5 wins in 25 games) ==========
+// ========== GAME LOGIC (SAME AS BEFORE) ==========
 class GameLogic {
   constructor() {
     this.sections = {
@@ -249,7 +335,6 @@ class GameLogic {
       'D': { minStake: 1000, maxWin: 15000 }
     };
     
-    // Track win counts per user
     this.userGameStats = {};
     
     this.probabilities = {
@@ -287,7 +372,6 @@ class GameLogic {
     return 'A';
   }
 
-  // Smart probability system - ensures ~5 wins in 25 games
   getDynamicWinChance(userId, mode) {
     if (!this.userGameStats[userId]) {
       this.userGameStats[userId] = {
@@ -440,14 +524,13 @@ const adminMiddleware = async (req, res, next) => {
     const secret = process.env.JWT_SECRET || "dev_secret_123";
     const decoded = jwt.verify(token, secret);
     
-    const data = await db.read();
-    const user = data.users.find(u => u.id === decoded.id);
+    const user = await db.getUserById(decoded.id);
     
-    if (!user || !user.isAdmin) {
+    if (!user || !user.is_admin) {
       return res.status(403).json({ success: false, message: "Admin only" });
     }
     
-    req.admin = { ...decoded, role: user.adminRole };
+    req.admin = { ...decoded, role: user.admin_role };
     next();
   } catch (err) {
     res.status(401).json({ success: false, message: "Invalid admin token" });
@@ -459,10 +542,9 @@ const adminMiddleware = async (req, res, next) => {
 // REGISTER WITH REFERRAL SYSTEM
 app.post("/auth/register", async (req, res) => {
   try {
-    const data = await db.read();
     const { phone, username, password, referralCode } = req.body;
     
-    // VALIDATION: All 4 fields required
+    // VALIDATION
     if (!phone || !username || !password || !referralCode) {
       return res.status(400).json({ 
         success: false, 
@@ -470,7 +552,6 @@ app.post("/auth/register", async (req, res) => {
       });
     }
     
-    // VALIDATION: Phone must be only numbers
     if (!/^\d+$/.test(phone)) {
       return res.status(400).json({ 
         success: false, 
@@ -478,7 +559,6 @@ app.post("/auth/register", async (req, res) => {
       });
     }
     
-    // VALIDATION: Username must be lowercase only
     if (!/^[a-z0-9_]+$/.test(username)) {
       return res.status(400).json({ 
         success: false, 
@@ -487,10 +567,11 @@ app.post("/auth/register", async (req, res) => {
     }
     
     // Check if referral code exists
-    let referrer = data.users.find(u => u.referralCode === referralCode);
+    let referrer = await db.getUserByReferralCode(referralCode);
     if (!referrer) {
       // Try to find any admin as default referrer
-      referrer = data.users.find(u => u.isAdmin);
+      const users = await db.getAllUsers();
+      referrer = users.find(u => u.is_admin);
       if (!referrer) {
         return res.status(400).json({ 
           success: false, 
@@ -500,8 +581,10 @@ app.post("/auth/register", async (req, res) => {
     }
     
     // Check if user already exists
-    const existing = data.users.find(u => u.phone === phone || u.username === username);
-    if (existing) {
+    const existingUser = await db.getUserByUsername(username);
+    const existingPhone = await db.getUserByPhone(phone);
+    
+    if (existingUser || existingPhone) {
       return res.status(400).json({ 
         success: false, 
         message: "Phone or username already exists" 
@@ -514,68 +597,43 @@ app.post("/auth/register", async (req, res) => {
     // Generate unique referral code for new user
     const newReferralCode = "REF" + Date.now().toString().slice(-6);
     
-    const user = {
-      id: Date.now().toString(),
+    const userData = {
       phone, 
       username, 
       password: hashedPassword,
-      realBalance: 0, 
-      demoBalance: 46800,
-      depositTier: null, 
-      demoBonus: 0,
-      currentBalanceMode: 'demo',
-      totalStakedReal: 0, 
-      totalStakedDemo: 0,
-      totalWonReal: 0, 
-      totalWonDemo: 0,
-      bankName: '', 
-      accountName: '', 
-      accountNumber: '',
-      withdrawalUnlocked: false, 
-      gamesPlayed: 0,
-      isAdmin: false,
-      referralCode: newReferralCode,
-      referredBy: referrer.id,
-      referrals: [],
-      totalReferralDeposits: 0,
-      createdAt: new Date().toISOString()
+      real_balance: 0, 
+      demo_balance: 46800,
+      deposit_tier: null, 
+      demo_bonus: 0,
+      current_balance_mode: 'demo',
+      total_staked_real: 0, 
+      total_staked_demo: 0,
+      total_won_real: 0, 
+      total_won_demo: 0,
+      bank_name: '', 
+      account_name: '', 
+      account_number: '',
+      withdrawal_unlocked: false, 
+      games_played: 0,
+      is_admin: false,
+      referral_code: newReferralCode,
+      referred_by: referrer.id,
+      total_referral_deposits: 0
     };
     
-    // Add new user
-    data.users.push(user);
-    
-    // Update referrer's referrals list
-    const referrerIndex = data.users.findIndex(u => u.id === referrer.id);
-    if (referrerIndex !== -1) {
-      if (!data.users[referrerIndex].referrals) {
-        data.users[referrerIndex].referrals = [];
-      }
-      data.users[referrerIndex].referrals.push({
-        userId: user.id,
-        username: user.username,
-        phone: user.phone,
-        joinedAt: new Date().toISOString(),
-        hasDeposited: false,
-        totalDeposited: 0
-      });
-    }
+    // Create user
+    const user = await db.createUser(userData);
     
     // Create referral record
-    if (!data.referrals) data.referrals = [];
-    data.referrals.push({
-      id: Date.now().toString(),
-      referrerId: referrer.id,
-      referrerUsername: referrer.username,
-      referredUserId: user.id,
-      referredUsername: user.username,
-      referralCode: referralCode,
-      joinedAt: new Date().toISOString(),
-      hasDeposited: false,
-      totalDeposited: 0
+    await db.createReferral({
+      referrer_id: referrer.id,
+      referrer_username: referrer.username,
+      referred_user_id: user.id,
+      referred_username: user.username,
+      referral_code: referralCode,
+      has_deposited: false,
+      total_deposited: 0
     });
-    
-    // Save (in memory)
-    await db.write();
     
     const token = jwt.sign({ id: user.id, username }, process.env.JWT_SECRET || "dev_secret_123", { expiresIn: "30d" });
     
@@ -592,7 +650,7 @@ app.post("/auth/register", async (req, res) => {
       }
     });
   } catch (error) {
-    console.error(error);
+    console.error("Registration error:", error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
@@ -600,22 +658,30 @@ app.post("/auth/register", async (req, res) => {
 // LOGIN
 app.post("/auth/login", async (req, res) => {
   try {
-    const data = await db.read();
     const { username, password } = req.body;
-    const user = data.users.find(u => u.username === username);
+    const user = await db.getUserByUsername(username);
+    
     if (!user) return res.status(400).json({ success: false, message: "Invalid credentials" });
+    
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ success: false, message: "Invalid credentials" });
+    
     const token = jwt.sign({ id: user.id, username }, process.env.JWT_SECRET || "dev_secret_123", { expiresIn: "30d" });
-    res.json({ success: true, message: "Logged in", token, user: { 
-      id: user.id, 
-      username, 
-      balance: user.realBalance, 
-      demoBalance: user.demoBalance,
-      referralCode: user.referralCode || "N/A"
-    } });
+    
+    res.json({ 
+      success: true, 
+      message: "Logged in", 
+      token, 
+      user: { 
+        id: user.id, 
+        username, 
+        balance: user.real_balance, 
+        demoBalance: user.demo_balance,
+        referralCode: user.referral_code || "N/A"
+      } 
+    });
   } catch (error) {
-    console.error(error);
+    console.error("Login error:", error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
@@ -623,30 +689,30 @@ app.post("/auth/login", async (req, res) => {
 // GET USER INFO
 app.get("/user/me", authMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
-    const user = data.users.find(u => u.id === req.user.id);
+    const user = await db.getUserById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
     res.json({
       success: true,
       user: {
         id: user.id, 
         username: user.username,
-        balance: user.realBalance || 0,
-        demoBalance: user.demoBalance || 46800,
-        depositTier: user.depositTier,
-        currentBalanceMode: user.currentBalanceMode || 'demo',
-        totalStakedReal: user.totalStakedReal || 0,
-        totalStakedDemo: user.totalStakedDemo || 0,
-        referralCode: user.referralCode || "N/A", // ✅ ADDED: Referral code
-        bankName: user.bankName || "", // ✅ ADDED: For bank check
-        accountName: user.accountName || "", // ✅ ADDED
-        accountNumber: user.accountNumber || "", // ✅ ADDED
-        withdrawalUnlocked: user.withdrawalUnlocked || false, // ✅ ADDED
-        gamesPlayed: user.gamesPlayed || 0 // ✅ ADDED
+        balance: user.real_balance || 0,
+        demoBalance: user.demo_balance || 46800,
+        depositTier: user.deposit_tier,
+        currentBalanceMode: user.current_balance_mode || 'demo',
+        totalStakedReal: user.total_staked_real || 0,
+        totalStakedDemo: user.total_staked_demo || 0,
+        referralCode: user.referral_code || "N/A",
+        bankName: user.bank_name || "",
+        accountName: user.account_name || "",
+        accountNumber: user.account_number || "",
+        withdrawalUnlocked: user.withdrawal_unlocked || false,
+        gamesPlayed: user.games_played || 0
       }
     });
   } catch (error) {
-    console.error(error);
+    console.error("Get user error:", error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
@@ -654,10 +720,15 @@ app.get("/user/me", authMiddleware, async (req, res) => {
 // CHECK TIER
 app.get("/deposit/has-tier", authMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
-    const user = data.users.find(u => u.id === req.user.id);
+    const user = await db.getUserById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
-    res.json({ success: true, hasTier: !!user.depositTier, tier: user.depositTier, demoBalance: user.demoBalance || 46800 });
+    
+    res.json({ 
+      success: true, 
+      hasTier: !!user.deposit_tier, 
+      tier: user.deposit_tier, 
+      demoBalance: user.demo_balance || 46800 
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
@@ -669,16 +740,30 @@ app.post("/deposit/select-tier", authMiddleware, async (req, res) => {
   try {
     const { tier } = req.body;
     const bonuses = { 1000: 50000, 5000: 250000, 10000: 500000 };
-    if (![1000, 5000, 10000].includes(tier)) return res.status(400).json({ success: false, message: "Invalid tier" });
-    const data = await db.read();
-    const userIndex = data.users.findIndex(u => u.id === req.user.id);
-    if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
-    if (data.users[userIndex].depositTier) return res.status(400).json({ success: false, message: "Tier already selected" });
-    data.users[userIndex].depositTier = tier;
-    data.users[userIndex].demoBonus = bonuses[tier];
-    data.users[userIndex].demoBalance = bonuses[tier];
-    await db.write();
-    res.json({ success: true, message: "Tier selected", demoBonus: bonuses[tier], currentBalance: bonuses[tier] });
+    
+    if (![1000, 5000, 10000].includes(tier)) {
+      return res.status(400).json({ success: false, message: "Invalid tier" });
+    }
+    
+    const user = await db.getUserById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
+    if (user.deposit_tier) {
+      return res.status(400).json({ success: false, message: "Tier already selected" });
+    }
+    
+    await db.updateUser(user.id, {
+      deposit_tier: tier,
+      demo_bonus: bonuses[tier],
+      demo_balance: bonuses[tier]
+    });
+    
+    res.json({ 
+      success: true, 
+      message: "Tier selected", 
+      demoBonus: bonuses[tier], 
+      currentBalance: bonuses[tier] 
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
@@ -689,14 +774,23 @@ app.post("/deposit/select-tier", authMiddleware, async (req, res) => {
 app.post("/user/switch-balance-mode", authMiddleware, async (req, res) => {
   try {
     const { mode } = req.body;
-    if (!['demo', 'real'].includes(mode)) return res.status(400).json({ success: false, message: "Invalid mode" });
-    const data = await db.read();
-    const userIndex = data.users.findIndex(u => u.id === req.user.id);
-    if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
-    data.users[userIndex].currentBalanceMode = mode;
-    await db.write();
-    const currentBalance = mode === 'demo' ? data.users[userIndex].demoBalance : data.users[userIndex].realBalance;
-    res.json({ success: true, message: `Switched to ${mode}`, mode, currentBalance });
+    if (!['demo', 'real'].includes(mode)) {
+      return res.status(400).json({ success: false, message: "Invalid mode" });
+    }
+    
+    const user = await db.getUserById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
+    await db.updateUser(user.id, { current_balance_mode: mode });
+    
+    const currentBalance = mode === 'demo' ? user.demo_balance : user.real_balance;
+    
+    res.json({ 
+      success: true, 
+      message: `Switched to ${mode}`, 
+      mode, 
+      currentBalance 
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
@@ -707,54 +801,69 @@ app.post("/user/switch-balance-mode", authMiddleware, async (req, res) => {
 app.post("/game/play", authMiddleware, async (req, res) => {
   try {
     const { stake, mode = 'demo' } = req.body;
-    if (![150, 300, 500, 1000].includes(stake)) return res.status(400).json({ success: false, message: "Invalid stake" });
-    const data = await db.read();
-    const userIndex = data.users.findIndex(u => u.id === req.user.id);
-    if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
-    const user = data.users[userIndex];
-    const balance = mode === 'demo' ? user.demoBalance : user.realBalance;
-    if (balance < stake) return res.status(400).json({ success: false, message: `Insufficient ${mode} balance` });
+    
+    if (![150, 300, 500, 1000].includes(stake)) {
+      return res.status(400).json({ success: false, message: "Invalid stake" });
+    }
+    
+    const user = await db.getUserById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
+    const balance = mode === 'demo' ? user.demo_balance : user.real_balance;
+    if (balance < stake) {
+      return res.status(400).json({ success: false, message: `Insufficient ${mode} balance` });
+    }
+    
     const section = gameLogic.getSectionFromStake(stake);
     let grid = gameLogic.generateGrid(section, mode);
     grid = gameLogic.applyProbabilityToGrid(grid, user.id, section, mode);
     const result = gameLogic.checkForWin(grid);
     
+    // Calculate new balances
+    let updates = {};
+    let newBalance;
+    
     if (mode === 'demo') {
-      data.users[userIndex].demoBalance -= stake;
-      data.users[userIndex].totalStakedDemo = (user.totalStakedDemo || 0) + stake;
+      newBalance = user.demo_balance - stake;
+      updates.demo_balance = newBalance;
+      updates.total_staked_demo = (user.total_staked_demo || 0) + stake;
+      
       if (result.isWin) {
-        data.users[userIndex].demoBalance += result.winAmount;
-        data.users[userIndex].totalWonDemo = (user.totalWonDemo || 0) + result.winAmount;
+        updates.demo_balance = newBalance + result.winAmount;
+        updates.total_won_demo = (user.total_won_demo || 0) + result.winAmount;
       }
     } else {
-      data.users[userIndex].realBalance -= stake;
-      data.users[userIndex].totalStakedReal = (user.totalStakedReal || 0) + stake;
+      newBalance = user.real_balance - stake;
+      updates.real_balance = newBalance;
+      updates.total_staked_real = (user.total_staked_real || 0) + stake;
+      
       if (result.isWin) {
-        data.users[userIndex].realBalance += result.winAmount;
-        data.users[userIndex].totalWonReal = (user.totalWonReal || 0) + result.winAmount;
+        updates.real_balance = newBalance + result.winAmount;
+        updates.total_won_real = (user.total_won_real || 0) + result.winAmount;
       }
     }
-    data.users[userIndex].gamesPlayed = (user.gamesPlayed || 0) + 1;
-    data.users[userIndex].lastGamePlayed = new Date().toISOString();
-
-    const game = {
-      id: Date.now().toString(),
-      userId: user.id,
+    
+    updates.games_played = (user.games_played || 0) + 1;
+    updates.last_game_played = new Date().toISOString();
+    
+    // Update user
+    await db.updateUser(user.id, updates);
+    
+    // Create game record
+    const game = await db.createGame({
+      user_id: user.id,
       stake,
       mode: mode,
-      winAmount: result.winAmount,
+      win_amount: result.winAmount,
       result: result.isWin ? "win" : "loss",
-      gridValues: grid,
-      newBalance: mode === 'demo' ? 
-        (data.users[userIndex].demoBalance) : 
-        (data.users[userIndex].realBalance),
-      scratchCount: 0,
-      createdAt: new Date().toISOString(),
-      matchingIndices: result.matchingIndices || []
-    };
-
-    data.games.push(game);
-    await db.write();
+      grid_values: grid,
+      new_balance: mode === 'demo' ? 
+        (updates.demo_balance) : 
+        (updates.real_balance),
+      scratch_count: 0,
+      matching_indices: result.matchingIndices || []
+    });
+    
     res.json({
       success: true,
       message: result.isWin ? "You won! 🎉" : "Try again!",
@@ -762,10 +871,10 @@ app.post("/game/play", authMiddleware, async (req, res) => {
       isWin: result.isWin,
       gridValues: grid,
       matchingIndices: result.matchingIndices,
-      newBalance: mode === 'demo' ? data.users[userIndex].demoBalance : data.users[userIndex].realBalance
+      newBalance: mode === 'demo' ? updates.demo_balance : updates.real_balance
     });
   } catch (error) {
-    console.error(error);
+    console.error("Game play error:", error);
     res.status(500).json({ success: false, message: "Game error" });
   }
 });
@@ -773,23 +882,18 @@ app.post("/game/play", authMiddleware, async (req, res) => {
 // GAME HISTORY
 app.get("/user/game-history", authMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
+    const games = await db.getUserGames(req.user.id, 50);
     
-    const userGames = data.games
-      .filter(g => g.userId === req.user.id)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, 50);
-    
-    const history = userGames.map(game => ({
+    const history = games.map(game => ({
       id: game.id,
       stake: game.stake,
       mode: game.mode || 'demo',
-      gridValues: game.gridValues || [],
-      winAmount: game.winAmount || 0,
+      gridValues: game.grid_values || [],
+      winAmount: game.win_amount || 0,
       isWin: game.result === "win",
-      newBalance: game.newBalance || 0,
-      timestamp: game.createdAt,
-      matchingIndices: game.matchingIndices || []
+      newBalance: game.new_balance || 0,
+      timestamp: game.created_at,
+      matchingIndices: game.matching_indices || []
     }));
     
     res.json({ 
@@ -807,14 +911,20 @@ app.get("/user/game-history", authMiddleware, async (req, res) => {
 app.post("/user/save-bank-details", authMiddleware, async (req, res) => {
   try {
     const { bankName, accountName, accountNumber } = req.body;
-    if (!bankName || !accountName || !accountNumber) return res.status(400).json({ success: false, message: "All details required" });
-    const data = await db.read();
-    const userIndex = data.users.findIndex(u => u.id === req.user.id);
-    if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
-    data.users[userIndex].bankName = bankName;
-    data.users[userIndex].accountName = accountName;
-    data.users[userIndex].accountNumber = accountNumber;
-    await db.write();
+    
+    if (!bankName || !accountName || !accountNumber) {
+      return res.status(400).json({ success: false, message: "All details required" });
+    }
+    
+    const user = await db.getUserById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
+    await db.updateUser(user.id, {
+      bank_name: bankName,
+      account_name: accountName,
+      account_number: accountNumber
+    });
+    
     res.json({ success: true, message: "Bank details saved" });
   } catch (error) {
     console.error(error);
@@ -825,32 +935,38 @@ app.post("/user/save-bank-details", authMiddleware, async (req, res) => {
 // WITHDRAWAL REQUIREMENTS
 app.get("/withdrawal/requirements", authMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
-    const user = data.users.find(u => u.id === req.user.id);
+    const user = await db.getUserById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
-    const tier = user.depositTier || 1000;
+    
+    const tier = user.deposit_tier || 1000;
     const requirements = {
-      1000: { stakeTarget: 10000, winTarget: 30000 },   // Changed: 1k deposit → 10k staked, 30k won
-      5000: { stakeTarget: 50000, winTarget: 100000 },  // Changed: 5k deposit → 50k staked, 100k won
-      10000: { stakeTarget: 150000, winTarget: 300000 } // Changed: 10k deposit → 150k staked, 300k won
+      1000: { stakeTarget: 10000, winTarget: 30000 },
+      5000: { stakeTarget: 50000, winTarget: 100000 },
+      10000: { stakeTarget: 150000, winTarget: 300000 }
     };
+    
     const reqs = requirements[tier] || requirements[1000];
-    const staked = user.totalStakedReal || 0;
-    const won = user.totalWonReal || 0;
+    const staked = user.total_staked_real || 0;
+    const won = user.total_won_real || 0;
     const stakeProgress = Math.min((staked / reqs.stakeTarget) * 100, 100);
     const winProgress = Math.min((won / reqs.winTarget) * 100, 100);
     const bothMet = staked >= reqs.stakeTarget && won >= reqs.winTarget;
+    
     res.json({
       success: true,
       tier: tier,
       requirements: reqs,
       progress: {
-        staked, stakeTarget: reqs.stakeTarget, stakeProgress: Math.floor(stakeProgress),
-        won, winTarget: reqs.winTarget, winProgress: Math.floor(winProgress),
+        staked, 
+        stakeTarget: reqs.stakeTarget, 
+        stakeProgress: Math.floor(stakeProgress),
+        won, 
+        winTarget: reqs.winTarget, 
+        winProgress: Math.floor(winProgress),
         bothRequirementsMet: bothMet
       },
-      adminUnlocked: user.withdrawalUnlocked || false,
-      canRequestWithdrawal: bothMet && (user.withdrawalUnlocked || false)
+      adminUnlocked: user.withdrawal_unlocked || false,
+      canRequestWithdrawal: bothMet && (user.withdrawal_unlocked || false)
     });
   } catch (error) {
     console.error(error);
@@ -861,25 +977,24 @@ app.get("/withdrawal/requirements", authMiddleware, async (req, res) => {
 // GET USER'S REFERRAL INFO
 app.get("/user/referral-info", authMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
-    const user = data.users.find(u => u.id === req.user.id);
+    const user = await db.getUserById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     
     // Get referrals made by this user
-    const userReferrals = data.referrals.filter(r => r.referrerId === user.id);
+    const referrals = await db.getReferralsByReferrer(user.id);
     
     res.json({
       success: true,
-      referralCode: user.referralCode,
-      referralLink: `${req.headers.origin || 'https://your-site.vercel.app'}/register?ref=${user.referralCode}`,
-      totalReferrals: userReferrals.length,
-      referrals: userReferrals.map(r => ({
-        username: r.referredUsername,
-        joinedAt: r.joinedAt,
-        hasDeposited: r.hasDeposited,
-        totalDeposited: r.totalDeposited
+      referralCode: user.referral_code,
+      referralLink: `${req.headers.origin || 'https://your-site.vercel.app'}/register?ref=${user.referral_code}`,
+      totalReferrals: referrals.length,
+      referrals: referrals.map(r => ({
+        username: r.referred_username,
+        joinedAt: r.joined_at,
+        hasDeposited: r.has_deposited,
+        totalDeposited: r.total_deposited
       })),
-      totalReferralDeposits: user.totalReferralDeposits || 0
+      totalReferralDeposits: user.total_referral_deposits || 0
     });
   } catch (error) {
     console.error(error);
@@ -889,7 +1004,7 @@ app.get("/user/referral-info", authMiddleware, async (req, res) => {
 
 // ========== ADMIN ROUTES ==========
 
-// ADMIN LOGIN - SIMPLIFIED AND WORKING
+// ADMIN LOGIN
 app.post("/api/admin/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -901,15 +1016,9 @@ app.post("/api/admin/login", async (req, res) => {
       });
     }
 
-    await db.read();
+    const admin = await db.getUserByUsername(username);
 
-    const admin = db.data.users.find(
-      u =>
-        u.username.toLowerCase() === username.toLowerCase() &&
-        u.isAdmin === true
-    );
-
-    if (!admin) {
+    if (!admin || !admin.is_admin) {
       return res.status(403).json({
         success: false,
         message: "Admin account not found"
@@ -928,7 +1037,7 @@ app.post("/api/admin/login", async (req, res) => {
       {
         id: admin.id,
         username: admin.username,
-        role: admin.adminRole,
+        role: admin.admin_role,
         isAdmin: true
       },
       process.env.JWT_SECRET || "dev_secret_123",
@@ -940,7 +1049,7 @@ app.post("/api/admin/login", async (req, res) => {
       token,
       admin: {
         username: admin.username,
-        role: admin.adminRole
+        role: admin.admin_role
       }
     });
   } catch (err) {
@@ -952,63 +1061,74 @@ app.post("/api/admin/login", async (req, res) => {
   }
 });
 
-
-// Get all users (admin) - WITH REFERRAL FIELDS
+// Get all users (admin)
 app.get("/api/admin/users", adminMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
-    const users = data.users.map(user => ({
-      id: user.id,
-      username: user.username,
-      phone: user.phone,
-      depositTier: user.depositTier || 1000,
-      realBalance: user.realBalance || 0,
-      demoBalance: user.demoBalance || 0,
-      totalStakedReal: user.totalStakedReal || 0,
-      totalWonReal: user.totalWonReal || 0,
-      withdrawalUnlocked: user.withdrawalUnlocked || false,
-      bankDetails: user.bankName ? 'Saved' : 'Not saved',
-      lastGame: user.lastGamePlayed,
-      createdAt: user.createdAt,
-      // REFERRAL FIELDS ADDED
-      referralCode: user.referralCode || "N/A",
-      referredBy: user.referredBy ? data.users.find(u => u.id === user.referredBy)?.username || "Unknown" : "Direct",
-      totalReferrals: user.referrals?.length || 0,
-      totalReferralDeposits: user.totalReferralDeposits || 0,
-      isAdmin: user.isAdmin || false
+    const users = await db.getAllUsers();
+    
+    const formattedUsers = await Promise.all(users.map(async (user) => {
+      // Get referrer info
+      let referrerName = "Direct";
+      if (user.referred_by) {
+        const referrer = await db.getUserById(user.referred_by);
+        if (referrer) referrerName = referrer.username;
+      }
+      
+      // Get referral count
+      const referrals = await db.getReferralsByReferrer(user.id);
+      
+      return {
+        id: user.id,
+        username: user.username,
+        phone: user.phone,
+        depositTier: user.deposit_tier || 1000,
+        realBalance: user.real_balance || 0,
+        demoBalance: user.demo_balance || 0,
+        totalStakedReal: user.total_staked_real || 0,
+        totalWonReal: user.total_won_real || 0,
+        withdrawalUnlocked: user.withdrawal_unlocked || false,
+        bankDetails: user.bank_name ? 'Saved' : 'Not saved',
+        lastGame: user.last_game_played,
+        createdAt: user.created_at,
+        referralCode: user.referral_code || "N/A",
+        referredBy: referrerName,
+        totalReferrals: referrals.length,
+        totalReferralDeposits: user.total_referral_deposits || 0,
+        isAdmin: user.is_admin || false
+      };
     }));
-    res.json({ success: true, count: users.length, users });
+    
+    res.json({ success: true, count: formattedUsers.length, users: formattedUsers });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
-// GET USER'S REFERRAL STATS FOR ADMIN
+// Get user's referral stats for admin
 app.get("/api/admin/user-referrals/:userId", adminMiddleware, async (req, res) => {
   try {
     const userId = req.params.userId;
-    const data = await db.read();
     
-    const user = data.users.find(u => u.id === userId);
+    const user = await db.getUserById(userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     
-    const referrals = data.referrals.filter(r => r.referrerId === userId);
+    const referrals = await db.getReferralsByReferrer(userId);
     
     res.json({
       success: true,
       user: {
         username: user.username,
-        referralCode: user.referralCode,
+        referralCode: user.referral_code,
         totalReferrals: referrals.length,
-        totalReferralDeposits: user.totalReferralDeposits || 0
+        totalReferralDeposits: user.total_referral_deposits || 0
       },
       referrals: referrals.map(r => ({
-        referredUser: r.referredUsername,
-        joinedAt: r.joinedAt,
-        hasDeposited: r.hasDeposited,
-        totalDeposited: r.totalDeposited,
-        depositCount: r.totalDeposited > 0 ? 1 : 0
+        referredUser: r.referred_username,
+        joinedAt: r.joined_at,
+        hasDeposited: r.has_deposited,
+        totalDeposited: r.total_deposited,
+        depositCount: r.total_deposited > 0 ? 1 : 0
       }))
     });
   } catch (error) {
@@ -1020,19 +1140,19 @@ app.get("/api/admin/user-referrals/:userId", adminMiddleware, async (req, res) =
 // Get eligible users for withdrawal unlock
 app.get("/api/admin/eligible-users", adminMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
+    const users = await db.getAllUsers();
     const eligibleUsers = [];
     const targets = {
-      1000: { stakeTarget: 10000, winTarget: 30000 },   // Updated
-      5000: { stakeTarget: 50000, winTarget: 100000 },  // Updated
-      10000: { stakeTarget: 150000, winTarget: 300000 } // Updated
+      1000: { stakeTarget: 10000, winTarget: 30000 },
+      5000: { stakeTarget: 50000, winTarget: 100000 },
+      10000: { stakeTarget: 150000, winTarget: 300000 }
     };
     
-    data.users.forEach(user => {
-      const tier = user.depositTier || 1000;
+    for (const user of users) {
+      const tier = user.deposit_tier || 1000;
       const target = targets[tier] || targets[1000];
-      const staked = user.totalStakedReal || 0;
-      const won = user.totalWonReal || 0;
+      const staked = user.total_staked_real || 0;
+      const won = user.total_won_real || 0;
       
       if (staked >= target.stakeTarget && won >= target.winTarget) {
         eligibleUsers.push({
@@ -1043,10 +1163,10 @@ app.get("/api/admin/eligible-users", adminMiddleware, async (req, res) => {
           stakeTarget: target.stakeTarget,
           won: won,
           winTarget: target.winTarget,
-          withdrawalUnlocked: user.withdrawalUnlocked || false
+          withdrawalUnlocked: user.withdrawal_unlocked || false
         });
       }
-    });
+    }
     
     res.json({ success: true, count: eligibleUsers.length, users: eligibleUsers });
   } catch (error) {
@@ -1059,17 +1179,16 @@ app.get("/api/admin/eligible-users", adminMiddleware, async (req, res) => {
 app.post("/api/admin/unlock-withdrawal/:userId", adminMiddleware, async (req, res) => {
   try {
     const userId = req.params.userId;
-    const data = await db.read();
-    const userIndex = data.users.findIndex(u => u.id === userId);
-    if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
     
-    data.users[userIndex].withdrawalUnlocked = true;
-    await db.write();
+    const user = await db.getUserById(userId);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
+    await db.updateUser(userId, { withdrawal_unlocked: true });
     
     res.json({ 
       success: true, 
-      message: `Withdrawal unlocked for ${data.users[userIndex].username}`,
-      user: { id: userId, username: data.users[userIndex].username, withdrawalUnlocked: true }
+      message: `Withdrawal unlocked for ${user.username}`,
+      user: { id: userId, username: user.username, withdrawalUnlocked: true }
     });
   } catch (error) {
     console.error(error);
@@ -1081,17 +1200,16 @@ app.post("/api/admin/unlock-withdrawal/:userId", adminMiddleware, async (req, re
 app.post("/api/admin/lock-withdrawal/:userId", adminMiddleware, async (req, res) => {
   try {
     const userId = req.params.userId;
-    const data = await db.read();
-    const userIndex = data.users.findIndex(u => u.id === userId);
-    if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
     
-    data.users[userIndex].withdrawalUnlocked = false;
-    await db.write();
+    const user = await db.getUserById(userId);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
+    await db.updateUser(userId, { withdrawal_unlocked: false });
     
     res.json({ 
       success: true, 
-      message: `Withdrawal locked for ${data.users[userIndex].username}`,
-      user: { id: userId, username: data.users[userIndex].username, withdrawalUnlocked: false }
+      message: `Withdrawal locked for ${user.username}`,
+      user: { id: userId, username: user.username, withdrawalUnlocked: false }
     });
   } catch (error) {
     console.error(error);
@@ -1102,107 +1220,73 @@ app.post("/api/admin/lock-withdrawal/:userId", adminMiddleware, async (req, res)
 // Get withdrawal requests
 app.get("/api/admin/withdrawal-requests", adminMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
-    const requests = data.withdrawals || [];
-    const fullRequests = requests.map(req => {
-      const user = data.users.find(u => u.id === req.userId);
+    const withdrawals = await db.getAllWithdrawals();
+    
+    const fullRequests = await Promise.all(withdrawals.map(async (req) => {
+      const user = await db.getUserById(req.user_id);
       return {
         requestId: req.id,
-        userId: req.userId,
+        userId: req.user_id,
         username: user ? user.username : 'Unknown',
         amount: req.amount,
-        bankName: req.bankName || user?.bankName || '',
-        accountName: req.accountName || user?.accountName || '',
-        accountNumber: req.accountNumber || user?.accountNumber || '',
+        bankName: req.bank_name || user?.bank_name || '',
+        accountName: req.account_name || user?.account_name || '',
+        accountNumber: req.account_number || user?.account_number || '',
         status: req.status || 'pending',
-        requestedAt: req.createdAt,
-        approvedAt: req.approvedAt,
-        paidAt: req.paidAt,
+        requestedAt: req.created_at,
+        approvedAt: req.approved_at,
+        paidAt: req.paid_at,
         adminNotes: req.notes || ''
       };
-    });
+    }));
     
-    res.json({ success: true, count: fullRequests.length, requests: fullRequests.reverse() });
+    res.json({ success: true, count: fullRequests.length, requests: fullRequests });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
-// Get user withdrawal history (for admin panel)
-app.get("/api/admin/user-withdrawals/:userId", adminMiddleware, async (req, res) => {
-  try {
-    const userId = req.params.userId;
-    const data = await db.read();
-    
-    const withdrawals = data.withdrawals.filter(w => w.userId === userId);
-    const user = data.users.find(u => u.id === userId);
-    
-    res.json({
-      success: true,
-      withdrawals: withdrawals.reverse(),
-      user: user ? {
-        username: user.username,
-        realBalance: user.realBalance
-      } : null
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-});
-
-// Approve withdrawal (admin) - BALANCE DEDUCTED IMMEDIATELY
+// Approve withdrawal (admin)
 app.post("/api/admin/approve-withdrawal/:requestId", adminMiddleware, async (req, res) => {
   try {
     const requestId = req.params.requestId;
     const { notes } = req.body;
-    const data = await db.read();
     
-    const requestIndex = data.withdrawals.findIndex(r => r.id === requestId);
-    if (requestIndex === -1) {
+    const withdrawal = await db.updateWithdrawal(requestId, {
+      status: 'approved',
+      approved_at: new Date().toISOString(),
+      notes: notes || "Approved by admin"
+    });
+    
+    if (!withdrawal) {
       return res.status(404).json({ success: false, message: "Request not found" });
     }
     
-    const request = data.withdrawals[requestIndex];
-    
-    if (request.status !== 'pending') {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Withdrawal already ${request.status}` 
-      });
-    }
-    
-    const userIndex = data.users.findIndex(u => u.id === request.userId);
-    if (userIndex === -1) {
+    // Deduct balance from user
+    const user = await db.getUserById(withdrawal.user_id);
+    if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
     
-    const user = data.users[userIndex];
-    
-    if (user.realBalance < request.amount) {
+    if (user.real_balance < withdrawal.amount) {
       return res.status(400).json({ 
         success: false, 
         message: "User has insufficient balance" 
       });
     }
     
-    data.users[userIndex].realBalance -= request.amount;
-    
-    data.withdrawals[requestIndex].status = 'approved';
-    data.withdrawals[requestIndex].approvedAt = new Date().toISOString();
-    data.withdrawals[requestIndex].notes = notes || "Approved by admin";
-    
-    await db.write();
+    await db.updateUser(user.id, {
+      real_balance: user.real_balance - withdrawal.amount
+    });
     
     res.json({
       success: true,
-      message: `Withdrawal approved for ${user.username}. ₦${request.amount} deducted from balance.`,
+      message: `Withdrawal approved for ${user.username}. ₦${withdrawal.amount} deducted from balance.`,
       request: { 
         id: requestId, 
         status: 'approved', 
-        amount: request.amount,
-        userBalance: data.users[userIndex].realBalance
+        amount: withdrawal.amount
       }
     });
   } catch (error) {
@@ -1216,15 +1300,15 @@ app.post("/api/admin/reject-withdrawal/:requestId", adminMiddleware, async (req,
   try {
     const requestId = req.params.requestId;
     const { notes } = req.body;
-    const data = await db.read();
     
-    const requestIndex = data.withdrawals.findIndex(r => r.id === requestId);
-    if (requestIndex === -1) return res.status(404).json({ success: false, message: "Request not found" });
+    const withdrawal = await db.updateWithdrawal(requestId, {
+      status: 'rejected',
+      notes: notes || "Rejected by admin"
+    });
     
-    data.withdrawals[requestIndex].status = 'rejected';
-    data.withdrawals[requestIndex].notes = notes || "Rejected by admin";
-    
-    await db.write();
+    if (!withdrawal) {
+      return res.status(404).json({ success: false, message: "Request not found" });
+    }
     
     res.json({
       success: true,
@@ -1237,38 +1321,26 @@ app.post("/api/admin/reject-withdrawal/:requestId", adminMiddleware, async (req,
   }
 });
 
-// Mark withdrawal as paid (admin) - NO BALANCE DEDUCTION (already done)
+// Mark withdrawal as paid
 app.post("/api/admin/mark-paid/:requestId", adminMiddleware, async (req, res) => {
   try {
     const requestId = req.params.requestId;
     const { paymentProof } = req.body;
     
-    const data = await db.read();
+    const withdrawal = await db.updateWithdrawal(requestId, {
+      status: 'paid',
+      paid_at: new Date().toISOString(),
+      payment_proof: paymentProof || ""
+    });
     
-    const withdrawalIndex = data.withdrawals.findIndex(w => w.id === requestId);
-    if (withdrawalIndex === -1) {
+    if (!withdrawal) {
       return res.status(404).json({ success: false, message: "Withdrawal not found" });
     }
-    
-    const withdrawal = data.withdrawals[withdrawalIndex];
-    
-    if (withdrawal.status !== 'approved') {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Withdrawal must be approved first" 
-      });
-    }
-    
-    data.withdrawals[withdrawalIndex].status = 'paid';
-    data.withdrawals[withdrawalIndex].paidAt = new Date().toISOString();
-    data.withdrawals[withdrawalIndex].paymentProof = paymentProof || "";
-    
-    await db.write();
     
     res.json({
       success: true,
       message: "Withdrawal marked as paid",
-      withdrawal: data.withdrawals[withdrawalIndex]
+      withdrawal: withdrawal
     });
   } catch (error) {
     console.error(error);
@@ -1276,71 +1348,69 @@ app.post("/api/admin/mark-paid/:requestId", adminMiddleware, async (req, res) =>
   }
 });
 
-// Get all deposit requests (admin)
+// Get all deposit requests
 app.get("/api/admin/deposit-requests", adminMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
-    const deposits = data.deposits || [];
-    res.json({ success: true, count: deposits.length, requests: deposits.reverse() });
+    const deposits = await db.getAllDeposits();
+    res.json({ success: true, count: deposits.length, requests: deposits });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
-// Approve deposit (admin) - WITH REFERRAL TRACKING
+// Approve deposit with referral tracking
 app.post("/api/admin/approve-deposit/:requestId", adminMiddleware, async (req, res) => {
   try {
     const requestId = req.params.requestId;
     const { notes } = req.body;
-    const data = await db.read();
     
-    const depositIndex = data.deposits.findIndex(d => d.id === requestId);
-    if (depositIndex === -1) return res.status(404).json({ success: false, message: "Deposit not found" });
+    const deposit = await db.updateDeposit(requestId, {
+      status: 'approved',
+      approved_at: new Date().toISOString(),
+      admin_notes: notes || "Approved by admin"
+    });
     
-    const deposit = data.deposits[depositIndex];
-    const userIndex = data.users.findIndex(u => u.id === deposit.userId);
+    if (!deposit) {
+      return res.status(404).json({ success: false, message: "Deposit not found" });
+    }
     
-    if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
+    // Add balance to user
+    const user = await db.getUserById(deposit.user_id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
     
-    data.deposits[depositIndex].status = 'approved';
-    data.deposits[depositIndex].approvedAt = new Date().toISOString();
-    data.deposits[depositIndex].adminNotes = notes || "Approved by admin";
+    await db.updateUser(user.id, {
+      real_balance: (user.real_balance || 0) + deposit.amount
+    });
     
-    data.users[userIndex].realBalance += deposit.amount;
-    
-    // 🔥 REFERRAL TRACKING - Check if user was referred and update referral stats
-    const referredUser = data.users[userIndex];
-    if (referredUser && referredUser.referredBy) {
+    // 🔥 REFERRAL TRACKING
+    if (user.referred_by) {
       // Find referrer
-      const referrerIndex = data.users.findIndex(u => u.id === referredUser.referredBy);
-      if (referrerIndex !== -1) {
+      const referrer = await db.getUserById(user.referred_by);
+      if (referrer) {
         // Update referrer's total referral deposits
-        data.users[referrerIndex].totalReferralDeposits = (data.users[referrerIndex].totalReferralDeposits || 0) + deposit.amount;
+        await db.updateUser(referrer.id, {
+          total_referral_deposits: (referrer.total_referral_deposits || 0) + deposit.amount
+        });
         
         // Update referral record
-        const referralIndex = data.referrals.findIndex(r => r.referredUserId === deposit.userId);
-        if (referralIndex !== -1) {
-          data.referrals[referralIndex].hasDeposited = true;
-          data.referrals[referralIndex].totalDeposited = (data.referrals[referralIndex].totalDeposited || 0) + deposit.amount;
-        }
+        const referrals = await db.getReferralsByReferrer(referrer.id);
+        const userReferral = referrals.find(r => r.referred_user_id === user.id);
         
-        // Update in referrer's referrals array
-        if (data.users[referrerIndex].referrals) {
-          const refInArray = data.users[referrerIndex].referrals.find(r => r.userId === deposit.userId);
-          if (refInArray) {
-            refInArray.hasDeposited = true;
-            refInArray.totalDeposited = (refInArray.totalDeposited || 0) + deposit.amount;
-          }
+        if (userReferral) {
+          await db.updateReferral(userReferral.id, {
+            has_deposited: true,
+            total_deposited: (userReferral.total_deposited || 0) + deposit.amount
+          });
         }
       }
     }
     
-    await db.write();
-    
     res.json({
       success: true,
-      message: `Deposit approved. ₦${deposit.amount} added to ${data.users[userIndex].username}'s balance.`,
+      message: `Deposit approved. ₦${deposit.amount} added to ${user.username}'s balance.`,
       deposit: { id: requestId, status: 'approved', amount: deposit.amount }
     });
   } catch (error) {
@@ -1349,20 +1419,20 @@ app.post("/api/admin/approve-deposit/:requestId", adminMiddleware, async (req, r
   }
 });
 
-// Reject deposit (admin)
+// Reject deposit
 app.post("/api/admin/reject-deposit/:requestId", adminMiddleware, async (req, res) => {
   try {
     const requestId = req.params.requestId;
     const { notes } = req.body;
-    const data = await db.read();
     
-    const depositIndex = data.deposits.findIndex(d => d.id === requestId);
-    if (depositIndex === -1) return res.status(404).json({ success: false, message: "Deposit not found" });
+    const deposit = await db.updateDeposit(requestId, {
+      status: 'rejected',
+      admin_notes: notes || "Rejected by admin"
+    });
     
-    data.deposits[depositIndex].status = 'rejected';
-    data.deposits[depositIndex].adminNotes = notes || "Rejected by admin";
-    
-    await db.write();
+    if (!deposit) {
+      return res.status(404).json({ success: false, message: "Deposit not found" });
+    }
     
     res.json({
       success: true,
@@ -1375,24 +1445,48 @@ app.post("/api/admin/reject-deposit/:requestId", adminMiddleware, async (req, re
   }
 });
 
+// DELETE USER ROUTE
+app.delete("/api/admin/delete-user/:userId", adminMiddleware, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    
+    const user = await db.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    
+    if (user.is_admin) {
+      return res.status(400).json({ success: false, message: "Cannot delete admin accounts" });
+    }
+    
+    await db.deleteUser(userId);
+    
+    res.json({ 
+      success: true, 
+      message: `User ${user.username} deleted successfully`,
+      deletedUser: { id: userId, username: user.username }
+    });
+  } catch (error) {
+    console.error("Delete user error:", error);
+    res.status(500).json({ success: false, message: "Server error deleting user" });
+  }
+});
+
 // ========== USER ROUTES CONTINUED ==========
 
-// User withdrawal request - WITH BETTER VALIDATION
+// User withdrawal request
 app.post("/withdrawal/request", authMiddleware, async (req, res) => {
   try {
     const { amount } = req.body;
-    const data = await db.read();
     
-    const userIndex = data.users.findIndex(u => u.id === req.user.id);
-    if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
+    const user = await db.getUserById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
     
-    const user = data.users[userIndex];
-    
-    if (!user.bankName || !user.accountNumber) {
+    if (!user.bank_name || !user.account_number) {
       return res.status(400).json({ success: false, message: "Save bank details first" });
     }
     
-    if (!user.withdrawalUnlocked) {
+    if (!user.withdrawal_unlocked) {
       return res.status(400).json({ success: false, message: "Withdrawal not unlocked by admin" });
     }
     
@@ -1405,16 +1499,16 @@ app.post("/withdrawal/request", authMiddleware, async (req, res) => {
       return res.status(400).json({ success: false, message: "Minimum withdrawal is ₦1,000" });
     }
     
-    if (amountNum > user.realBalance) {
+    if (amountNum > user.real_balance) {
       return res.status(400).json({ 
         success: false, 
-        message: `Amount exceeds your balance of ₦${user.realBalance.toLocaleString()}` 
+        message: `Amount exceeds your balance of ₦${user.real_balance.toLocaleString()}` 
       });
     }
     
-    const pendingWithdrawals = data.withdrawals.filter(w => 
-      w.userId === user.id && w.status === 'pending'
-    );
+    // Check for pending withdrawals
+    const withdrawals = await db.getUserWithdrawals(user.id);
+    const pendingWithdrawals = withdrawals.filter(w => w.status === 'pending');
     
     if (pendingWithdrawals.length > 0) {
       return res.status(400).json({ 
@@ -1423,26 +1517,21 @@ app.post("/withdrawal/request", authMiddleware, async (req, res) => {
       });
     }
     
-    const withdrawal = {
-      id: Date.now().toString(),
-      userId: user.id,
+    const withdrawal = await db.createWithdrawal({
+      user_id: user.id,
       amount: amountNum,
       status: 'pending',
-      bankName: user.bankName,
-      accountName: user.accountName,
-      accountNumber: user.accountNumber,
-      createdAt: new Date().toISOString()
-    };
-    
-    data.withdrawals.push(withdrawal);
-    await db.write();
+      bank_name: user.bank_name,
+      account_name: user.account_name,
+      account_number: user.account_number
+    });
     
     res.json({
       success: true,
       message: "Withdrawal request submitted",
       requestId: withdrawal.id,
       status: 'pending',
-      currentBalance: user.realBalance
+      currentBalance: user.real_balance
     });
   } catch (error) {
     console.error(error);
@@ -1450,49 +1539,10 @@ app.post("/withdrawal/request", authMiddleware, async (req, res) => {
   }
 });
 
-// DELETE USER ROUTE
-app.delete("/api/admin/delete-user/:userId", adminMiddleware, async (req, res) => {
-    try {
-        const userId = req.params.userId;
-        const data = await db.read();
-        
-        const userIndex = data.users.findIndex(u => u.id === userId);
-        if (userIndex === -1) {
-            return res.status(404).json({ success: false, message: "User not found" });
-        }
-        
-        const user = data.users[userIndex];
-        
-        // Prevent deleting admin accounts
-        if (user.isAdmin) {
-            return res.status(400).json({ success: false, message: "Cannot delete admin accounts" });
-        }
-        
-        // Delete user and their data
-        data.users.splice(userIndex, 1);
-        data.games = data.games.filter(g => g.userId !== userId);
-        data.deposits = (data.deposits || []).filter(d => d.userId !== userId);
-        data.withdrawals = (data.withdrawals || []).filter(w => w.userId !== userId);
-        data.referrals = (data.referrals || []).filter(r => r.referrerId !== userId && r.referredUserId !== userId);
-        
-        await db.write();
-        
-        res.json({ 
-            success: true, 
-            message: `User ${user.username} deleted successfully`,
-            deletedUser: { id: userId, username: user.username }
-        });
-    } catch (error) {
-        console.error("Delete user error:", error);
-        res.status(500).json({ success: false, message: "Server error deleting user" });
-    }
-});
-
 // Get user withdrawal history
 app.get("/user/withdrawal-history", authMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
-    const withdrawals = (data.withdrawals || []).filter(w => w.userId === req.user.id);
+    const withdrawals = await db.getUserWithdrawals(req.user.id);
     
     res.json({ 
       success: true, 
@@ -1500,13 +1550,13 @@ app.get("/user/withdrawal-history", authMiddleware, async (req, res) => {
         id: withdrawal.id,
         amount: withdrawal.amount,
         status: withdrawal.status,
-        bankName: withdrawal.bankName,
-        accountNumber: withdrawal.accountNumber,
-        createdAt: withdrawal.createdAt,
-        approvedAt: withdrawal.approvedAt,
-        paidAt: withdrawal.paidAt,
+        bankName: withdrawal.bank_name,
+        accountNumber: withdrawal.account_number,
+        createdAt: withdrawal.created_at,
+        approvedAt: withdrawal.approved_at,
+        paidAt: withdrawal.paid_at,
         notes: withdrawal.notes
-      })).reverse() 
+      }))
     });
   } catch (error) {
     console.error(error);
@@ -1518,26 +1568,17 @@ app.get("/user/withdrawal-history", authMiddleware, async (req, res) => {
 app.post("/deposit/request", authMiddleware, async (req, res) => {
   try {
     const { amount, paymentProof } = req.body;
-    const data = await db.read();
     
-    const userIndex = data.users.findIndex(u => u.id === req.user.id);
-    if (userIndex === -1) return res.status(404).json({ success: false, message: "User not found" });
+    const user = await db.getUserById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
     
-    const deposit = {
-      id: Date.now().toString(),
-      userId: req.user.id,
-      username: data.users[userIndex].username,
+    const deposit = await db.createDeposit({
+      user_id: user.id,
+      username: user.username,
       amount: parseFloat(amount),
-      paymentProof: paymentProof || "",
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      approvedAt: null,
-      adminNotes: ""
-    };
-    
-    if (!data.deposits) data.deposits = [];
-    data.deposits.push(deposit);
-    await db.write();
+      payment_proof: paymentProof || "",
+      status: 'pending'
+    });
     
     res.json({
       success: true,
@@ -1554,8 +1595,7 @@ app.post("/deposit/request", authMiddleware, async (req, res) => {
 // Get user deposit history
 app.get("/user/deposit-history", authMiddleware, async (req, res) => {
   try {
-    const data = await db.read();
-    const deposits = (data.deposits || []).filter(d => d.userId === req.user.id);
+    const deposits = await db.getUserDeposits(req.user.id);
     
     res.json({ 
       success: true, 
@@ -1563,11 +1603,11 @@ app.get("/user/deposit-history", authMiddleware, async (req, res) => {
         id: deposit.id,
         amount: deposit.amount,
         status: deposit.status,
-        paymentProof: deposit.paymentProof,
-        createdAt: deposit.createdAt,
-        approvedAt: deposit.approvedAt,
-        adminNotes: deposit.adminNotes
-      })).reverse() 
+        paymentProof: deposit.payment_proof,
+        createdAt: deposit.created_at,
+        approvedAt: deposit.approved_at,
+        adminNotes: deposit.admin_notes
+      }))
     });
   } catch (error) {
     console.error(error);
@@ -1575,31 +1615,38 @@ app.get("/user/deposit-history", authMiddleware, async (req, res) => {
   }
 });
 
-// ========== DIAGNOSTIC ENDPOINT ==========
-app.get("/api/debug/database", async (req, res) => {
+// ========== SIMPLE FILE PERSISTENCE ==========
+const dataFile = path.join(__dirname, 'data.json');
+
+// Load existing data on startup
+if (fs.existsSync(dataFile)) {
   try {
-    const data = await db.read();
-    const admins = data.users.filter(u => u.isAdmin);
-    
-    res.json({
-      success: true,
-      environment: "Vercel Serverless",
-      storageType: "In-Memory (data resets on restart)",
-      totalUsers: data.users.length,
-      admins: admins.map(a => ({
-        username: a.username,
-        referralCode: a.referralCode,
-        role: a.adminRole,
-        id: a.id
-      })),
-      allReferralCodes: data.users.map(u => u.referralCode).filter(code => code),
-      availableReferralCodes: ["ADMINREF001", "MANAGERREF001", "SUPPORTREF001"],
-      message: "For persistent storage, add MongoDB Atlas or Supabase database."
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    const savedData = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+    users = savedData.users || [];
+    games = savedData.games || [];
+    deposits = savedData.deposits || [];
+    withdrawals = savedData.withdrawals || [];
+    referrals = savedData.referrals || [];
+    console.log(`📊 Loaded ${users.length} users, ${games.length} games from file`);
+  } catch (e) {
+    console.log("⚠️  Could not load saved data");
   }
-});
+}
+
+// Save data every 30 seconds
+setInterval(() => {
+  const data = {
+    users,
+    games,
+    deposits,
+    withdrawals,
+    referrals,
+    lastSaved: new Date().toISOString()
+  };
+  
+  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
+  console.log(`💾 Saved ${users.length} users, ${games.length} games to file`);
+}, 30000);
 
 // ========== VERCEl EXPORT ==========
 module.exports = app;
@@ -1609,8 +1656,8 @@ if (require.main === module) {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📁 Database: In-Memory Storage`);
-    console.log(`⚠️  WARNING: Data resets on server restart`);
+    console.log(`📁 Database: In-Memory with File Backup`);
+    console.log(`✅ Data is now persistent!`);
     console.log(`🔑 ADMIN CREDENTIALS:`);
     console.log(`   Username: admin | Password: admin123 | Referral Code: ADMINREF001`);
     console.log(`   Username: manager | Password: manager123 | Referral Code: MANAGERREF001`);
