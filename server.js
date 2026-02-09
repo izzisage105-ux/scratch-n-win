@@ -704,11 +704,6 @@ app.get("/admin/stats", adminMiddleware, async (req, res) => {
   });
 });
 
-/* ===================== HEALTH CHECK ===================== */
-app.get("/", (req, res) => {
-  res.send("Scratch & Win API running");
-});
-
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "auth.html"));
 });
