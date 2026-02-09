@@ -15,6 +15,10 @@ const supabase = require("./lib/supabase");
 
 const app = express();
 
+const path = require("path");
+
+app.use(express.static(path.join(__dirname, "public")));
+
 /* ===================== GLOBAL MIDDLEWARE ===================== */
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
@@ -703,6 +707,10 @@ app.get("/admin/stats", adminMiddleware, async (req, res) => {
 /* ===================== HEALTH CHECK ===================== */
 app.get("/", (req, res) => {
   res.send("Scratch & Win API running");
+});
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "auth.html"));
 });
 
 /* ===================== SERVER START ===================== */
