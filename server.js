@@ -46,12 +46,12 @@ const adminMiddleware = async (req, res, next) => {
     // Check if user is actually an admin in the database
     const { data: user } = await supabase
       .from("users")
-      .select("is_admin")
+      .select("is_admin, admin_role")
       .eq("id", req.user.id)
       .single();
 
     if (!user || !user.is_admin) {
-      return res.status(403).json({ success: false, message: "Admin access denied" });
+      return res.status(403).json({ success: false, message: "Admin only" });
     }
     next();
   });
